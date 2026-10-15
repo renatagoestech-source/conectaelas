@@ -212,8 +212,11 @@ async function handle(req: Request) {
     case "book": {
       const me = await auth(req, ["client"]);
       const sl = first(await get("slots", { select: "id,provider_id", id: idFilter(input.slot_id), booked: "eq.false", limit: "1" }));
-      const sv = sl ? first(await get("services", { select: "id", id: idFilter(input.service_id), provider_id: idFilter(sl.provider_id), limit: "1" })) : null;
-      if (!sl || !sv) fail(400, "Horário indisponível");
+      if (!sl) fail(400, "Horário indisponível");
+      const owner = first(await get("users", { select: "is_demo", id: idFilter(sl.provider_id), role: "eq.provider", limit: "1" }));
+      if (owner?.is_demo) fail(400, "Este perfil demonstrativo não aceita agendamentos.");
+      const sv = first(await get("services", { select: "id", id: idFilter(input.service_id), provider_id: idFilter(sl.provider_id), limit: "1" }));
+      if (!sv) fail(400, "Horário indisponível");
       const booked = await patch("slots", { id: idFilter(sl.id), booked: "eq.false" }, { booked: true });
       if (!booked.length) fail(400, "Horário acabou de ser reservado");
       await post("bookings", { slot_id: sl.id, service_id: sv.id, client_id: me.id, provider_id: sl.provider_id });
