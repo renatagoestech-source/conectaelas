@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS public.users (
   email varchar(160) NOT NULL UNIQUE,
   pass varchar(255) NOT NULL,
   whatsapp varchar(30) NOT NULL DEFAULT '',
-  created timestamptz NOT NULL DEFAULT now()
+  created timestamptz NOT NULL DEFAULT now(),
+  is_demo boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS public.categories (
@@ -56,6 +57,7 @@ CREATE INDEX IF NOT EXISTS services_provider_idx ON public.services(provider_id)
 CREATE INDEX IF NOT EXISTS slots_provider_day_idx ON public.slots(provider_id, day);
 CREATE INDEX IF NOT EXISTS bookings_client_idx ON public.bookings(client_id, created DESC);
 CREATE INDEX IF NOT EXISTS bookings_provider_idx ON public.bookings(provider_id, created DESC);
+CREATE INDEX IF NOT EXISTS users_demo_idx ON public.users(is_demo, role) WHERE is_demo = true;
 
 INSERT INTO public.categories(name) VALUES
   ('Cabelo'), ('Unhas'), ('Maquiagem'), ('Sobrancelhas e Cílios'),

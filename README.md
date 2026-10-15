@@ -13,3 +13,9 @@ Aplicação web para conectar clientes a profissionais de beleza, cadastrar serv
 ## Deploy
 
 A interface estática é publicada pela Vercel a partir da branch `main`. A API e o banco são hospedados pelo Supabase. A função autentica os tokens da aplicação e aplica autorização por perfil.
+
+## Demonstrações e administração
+
+O banco contém perfis de demonstração identificados por `is_demo`; eles usam e-mails reservados, não têm contato real e não aceitam agendamentos. A conta administradora inicial é gerenciada diretamente no Supabase; nunca armazene a senha em arquivos do repositório. O painel tem uma aba dedicada para excluir perfis de demonstração e seus dados relacionados.
+
+O seletor de tema oferece modo claro/escuro, lembra a escolha neste navegador e respeita a preferência do sistema na primeira visita.

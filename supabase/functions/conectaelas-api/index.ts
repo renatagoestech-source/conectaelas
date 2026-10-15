@@ -137,14 +137,14 @@ async function handle(req: Request) {
     case "providers": {
       const category = url.searchParams.get("cat") ?? "", query = (url.searchParams.get("q") ?? "").toLocaleLowerCase();
       const [users, profiles, services] = await Promise.all([
-        get("users", { select: "id,name", role: "eq.provider", order: "id.desc", limit: "200" }),
+        get("users", { select: "id,name,is_demo", role: "eq.provider", order: "id.desc", limit: "200" }),
         get("providers", { select: "user_id,category,logo,city,bio" }),
         get("services", { select: "id,provider_id,title,price,images", order: "id.asc" }),
       ]);
       const result = users.map((u: any) => {
         const p = profiles.find((x: any) => Number(x.user_id) === Number(u.id));
         const own = services.filter((x: any) => Number(x.provider_id) === Number(u.id));
-        return { id: u.id, name: u.name, category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images };
+        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images };
       }).filter((p: any) => p.category && (!category || p.category === category) && (!query || [p.name,p.category,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
         .slice(0, 60);
       return result;
@@ -152,7 +152,7 @@ async function handle(req: Request) {
     case "provider": {
       const id = Number(url.searchParams.get("id") ?? 0);
       const [u, p] = await Promise.all([
-        get("users", { select: "id,name,whatsapp", id: idFilter(id), role: "eq.provider", limit: "1" }),
+        get("users", { select: "id,name,whatsapp,is_demo", id: idFilter(id), role: "eq.provider", limit: "1" }),
         get("providers", { select: "category,bio,logo,city", user_id: idFilter(id), limit: "1" }),
       ]);
       if (!u.length || !p.length) fail(404, "Não encontrado");
@@ -248,7 +248,7 @@ async function handle(req: Request) {
     case "admin_users": {
       await auth(req,["admin"]);
       const [users, providers] = await Promise.all([
-        get("users", { select: "id,role,name,email,whatsapp,created", role: "neq.admin", order: "id.desc" }),
+        get("users", { select: "id,role,name,email,whatsapp,created,is_demo", role: "neq.admin", order: "id.desc" }),
         get("providers", { select: "user_id,category" }),
       ]);
       return users.map((u: any) => ({ ...u, category: providers.find((p: any) => Number(p.user_id) === Number(u.id))?.category ?? null }));
@@ -256,6 +256,11 @@ async function handle(req: Request) {
     case "admin_user_del": {
       await auth(req,["admin"]);
       await del("users", { id: idFilter(input.id), role: "neq.admin" });
+      return { ok: 1 };
+    }
+    case "admin_demo_del": {
+      await auth(req,["admin"]);
+      await del("users", { id: idFilter(input.id), role: "eq.provider", is_demo: "eq.true" });
       return { ok: 1 };
     }
     case "admin_cat_add": {

@@ -1,5 +1,7 @@
 const $=s=>document.querySelector(s),app=$('#app');
 let U=JSON.parse(localStorage.u||'null'),T=localStorage.t||'';
+function toggleTheme(){const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;localStorage.setItem('ce-theme',next);nav()}
+
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const brl=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const wa=(n,m)=>`https://wa.me/55${String(n).replace(/\D/g,'')}?text=${encodeURIComponent(m)}`;
@@ -11,28 +13,28 @@ async function api(a,body,qs='',quiet=false){
   const d=await r.json().catch(()=>({error:'Resposta inválida'}));
   if(!r.ok){if(r.status===401&&T)logout(true);if(!quiet)alert(d.error||'Erro');throw d}return d}
 function logout(s){localStorage.clear();U=null;T='';if(!s)location.hash='#/';nav();}
-function nav(){$('#nav').innerHTML=`<a href="#/">Início</a>`+(U?`<a href="#/${U.role==='admin'?'admin':'painel'}">${U.role==='admin'?'Admin':U.role==='provider'?'Meu painel':'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`:`<a href="#/login">Entrar</a><a class="btn sm" href="#/cadastro">Cadastrar</a>`)}
+function nav(){$('#nav').innerHTML=`<a href="#/">Início</a>`+(U?`<a href="#/${U.role==='admin'?'admin':'painel'}">${U.role==='admin'?'Admin':U.role==='provider'?'Meu painel':'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`:`<a href="#/login">Entrar</a><a class="btn sm" href="#/cadastro">Cadastrar</a>`)+`<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema">${document.documentElement.dataset.theme==='dark'?'Modo claro':'Modo escuro'}</button>`;$('#theme-toggle').onclick=toggleTheme}
 function route(){nav();const h=location.hash.slice(2).split('/');({'':home,p:()=>provider(h[1]),login,cadastro,painel,admin}[h[0]]||home)();scrollTo(0,0)}
 addEventListener('hashchange',route);
 
 async function home(){
   let cats;
   try { cats=await api('cats',null,'',true); } catch(e) { app.innerHTML=`<div class="box"><h2>Estamos preparando o Conecta Ela's</h2><p class="muted">A busca e os agendamentos ficarão disponíveis quando o banco de dados for configurado.</p><p class="muted">${esc(e?.error||'Serviço temporariamente indisponível.')}</p></div>`; return; }
-  app.innerHTML=`<div class="hero"><h1>Encontre o profissional de beleza ideal</h1><div class="bar"><input id="q" placeholder="Buscar serviço ou profissional..."><select id="cat"><option value="">Todas as categorias</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select><button class="btn" style="background:#fff;color:var(--p)" id="go">Buscar</button></div></div><div class="grid" id="list"></div>`;
+  app.innerHTML=`<div class="hero"><h1>Encontre o profissional de beleza ideal</h1><div class="bar"><input id="q" placeholder="Buscar serviço ou profissional..."><select id="cat"><option value="">Todas as categorias</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select><button class="btn" style="background:var(--surface);color:var(--p)" id="go">Buscar</button></div></div><div class="grid" id="list"></div>`;
   const load=async()=>{const l=await api('providers',null,`&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}`);
-    $('#list').innerHTML=l.length?l.map(p=>`<a class="card" href="#/p/${p.id}"><div class="img" ${bg(imgs(p.img)[0])}><div class="logo" ${bg(p.logo)}></div></div><div class="info"><b>${esc(p.name)}</b><br><span class="tag">${esc(p.category||'')}</span><div class="muted">${esc(p.city||'')}</div>${p.min_price?`<div>a partir de <span class="price">${brl(p.min_price)}</span></div>`:''}</div></a>`).join(''):'<p class="muted">Nenhum profissional encontrado.</p>'};
+    $('#list').innerHTML=l.length?l.map(p=>`<a class="card" href="#/p/${p.id}"><div class="img${p.is_demo?' demo-cover':''}" ${bg(imgs(p.img)[0])}>${p.is_demo?`<span class="demo-monogram">${esc(p.name.split(' ').filter(Boolean).map(x=>x[0]).slice(0,2).join('').toUpperCase())}</span>`:''}<div class="logo" ${bg(p.logo)}></div></div><div class="info"><b>${esc(p.name)}</b> ${p.is_demo?'<span class="tag demo-tag">DEMO</span>':''}<br><span class="tag">${esc(p.category||'')}</span><div class="muted">${esc(p.city||'')}</div>${p.min_price?`<div>a partir de <span class="price">${brl(p.min_price)}</span></div>`:''}</div></a>`).join(''):'<p class="muted">Nenhum profissional encontrado.</p>'};
   $('#go').onclick=load;$('#q').onkeydown=e=>e.key==='Enter'&&load();$('#cat').onchange=load;load()}
 
 async function provider(id){
   const p=await api('provider',null,`&id=${id}`);let sv=null,sl=null;
   const days=[...new Set(p.slots.map(s=>s.day))];
-  app.innerHTML=`<div class="profile-head"><div class="lg" ${bg(p.logo)}></div><div><h2 style="margin:0">${esc(p.name)}</h2><span class="tag">${esc(p.category||'')}</span> <span class="muted">${esc(p.city||'')}</span><p>${esc(p.bio||'')}</p><a class="btn wa sm" target="_blank" href="${wa(p.whatsapp,'Olá '+p.name+'! Vi seu perfil no Conecta Elas.')}">💬 WhatsApp</a></div></div>
-  <h3>Serviços</h3><div class="row">${p.services.map(s=>{const im=imgs(s.images);return`<div class="box"><img class="main-img" id="m${s.id}" src="${esc(im[0]||'')}" alt=""><div class="thumbs">${im.map(u=>`<img src="${esc(u)}" onclick="document.getElementById('m${s.id}').src=this.src">`).join('')}</div><h4>${esc(s.title)}</h4><p class="muted">${esc(s.descr)}</p><div class="price">${brl(s.price)}</div><button class="btn sm" data-s="${s.id}">Escolher</button></div>`}).join('')||'<p class="muted">Sem serviços ainda.</p>'}</div>
-  <div class="box"><h3>Agendar</h3><p id="sel" class="muted">Escolha um serviço acima.</p><label>Dia</label><select id="day"><option value="">Selecione</option>${days.map(d=>`<option value="${d}">${fd(d)}</option>`).join('')}</select><label>Horário</label><div class="slots" id="hrs"></div><br><button class="btn" id="bk">Confirmar agendamento</button></div>`;
-  document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sv=b.dataset.s;$('#sel').textContent='Serviço: '+b.parentNode.querySelector('h4').textContent});
+  app.innerHTML=`<div class="profile-head"><div class="lg" ${bg(p.logo)}></div><div><h2 style="margin:0">${esc(p.name)}</h2><span class="tag">${esc(p.category||'')}</span> ${p.is_demo?'<span class="tag demo-tag">Perfil demonstrativo</span>':''} <span class="muted">${esc(p.city||'')}</span><p>${esc(p.bio||'')}</p>${p.is_demo?'<p class="muted">Este perfil fictício é apenas para demonstração; o contato não está ativo.</p>':`<a class="btn wa sm" target="_blank" href="${wa(p.whatsapp,'Olá '+p.name+'! Vi seu perfil no Conecta Elas.')}">WhatsApp</a>`}</div></div>
+  <h3>Serviços</h3><div class="row">${p.services.map(s=>{const im=imgs(s.images);return`<div class="box">${im[0]?`<img class="main-img" id="m${s.id}" src="${esc(im[0])}" alt="Foto do serviço ${esc(s.title)}">`:`<div class="main-img service-placeholder" aria-label="Imagem ilustrativa">Conecta Ela's</div>`}<div class="thumbs">${im.map(u=>`<img src="${esc(u)}" onclick="document.getElementById('m${s.id}').src=this.src">`).join('')}</div><h4>${esc(s.title)}</h4><p class="muted">${esc(s.descr)}</p><div class="price">${brl(s.price)}</div>${p.is_demo?'<span class="tag demo-tag">Serviço de exemplo</span>':`<button class="btn sm" data-s="${s.id}">Escolher</button>`}</div>`}).join('')||'<p class="muted">Sem serviços ainda.</p>'}</div>
+  ${p.is_demo?`<div class="box"><h3>Agenda de exemplo</h3><p class="demo-note">Horários ilustrativos. Perfis fictícios não aceitam agendamentos.</p><div class="slots">${p.slots.map(s=>`<span class="tag">${fd(s.day)} · ${s.hour}</span>`).join('')||'<span class="muted">Agenda de demonstração.</span>'}</div></div>`:`<div class="box"><h3>Agendar</h3><p id="sel" class="muted">Escolha um serviço acima.</p><label>Dia</label><select id="day"><option value="">Selecione</option>${days.map(d=>`<option value="${d}">${fd(d)}</option>`).join('')}</select><label>Horário</label><div class="slots" id="hrs"></div><br><button class="btn" id="bk">Confirmar agendamento</button></div>`}`;
+  if(!p.is_demo){document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sv=b.dataset.s;$('#sel').textContent='Serviço: '+b.parentNode.querySelector('h4').textContent});
   $('#day').onchange=e=>{sl=null;$('#hrs').innerHTML=p.slots.filter(s=>s.day===e.target.value).map(s=>`<button data-i="${s.id}">${s.hour}</button>`).join('');document.querySelectorAll('#hrs button').forEach(b=>b.onclick=()=>{sl=b.dataset.i;document.querySelectorAll('#hrs button').forEach(x=>x.classList.remove('on'));b.classList.add('on')})};
   $('#bk').onclick=async()=>{if(!U||U.role!=='client')return alert('Entre como cliente para agendar.'),location.hash='#/login';if(!sv||!sl)return alert('Escolha serviço, dia e horário.');
-    await api('book',{slot_id:sl,service_id:sv});alert('Agendado! Combine detalhes pelo WhatsApp.');location.hash='#/painel'}}
+    await api('book',{slot_id:sl,service_id:sv});alert('Agendado! Combine detalhes pelo WhatsApp.');location.hash='#/painel'}}}
 
 function authForm(reg){
   app.innerHTML=`<div class="box auth"><h2>${reg?'Criar conta':'Entrar'}</h2>
@@ -70,12 +72,15 @@ window.del=async(a,id)=>{await api(a,{id});painel(window._tab)};
 async function admin(tab='u'){
   if(!U||U.role!=='admin')return location.hash='#/login';
   const [us,cats,bk]=await Promise.all([api('admin_users'),api('cats'),api('admin_bookings')]);
-  const t={u:`<div class="box"><table><tr><th>Nome</th><th>Tipo</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${us.map(u=>`<tr><td>${esc(u.name)}</td><td>${u.role==='provider'?'Prestador · '+esc(u.category||''):'Cliente'}</td><td>${esc(u.email)}</td><td>${esc(u.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${u.id})">Excluir</button></td></tr>`).join('')}</table></div>`,
+  const demos=us.filter(u=>u.is_demo);
+  const t={u:`<div class="box"><table><tr><th>Nome</th><th>Tipo</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${us.map(u=>`<tr><td>${esc(u.name)} ${u.is_demo?'<span class="tag demo-tag">DEMO</span>':''}</td><td>${u.role==='provider'?'Profissional · '+esc(u.category||''):'Cliente'}</td><td>${esc(u.email)}</td><td>${esc(u.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${u.id})">Excluir</button></td></tr>`).join('')}</table></div>`,
+  d:`<div class="box"><p class="muted">Estes perfis são fictícios e estão identificados como demonstração no site público. Removê-los também apaga seus serviços e horários.</p>${demos.length?`<table><tr><th>Profissional demonstrativo</th><th>Categoria</th><th>E-mail</th><th></th></tr>${demos.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.category||'')}</td><td>${esc(u.email)}</td><td><button class="btn red sm" onclick="adelDemo(${u.id})">Excluir demonstração</button></td></tr>`).join('')}</table>`:'<p class="muted">Nenhum perfil demonstrativo ativo.</p>'}</div>`,
   c:`<div class="box"><div class="bar"><input id="nc" placeholder="Nova categoria"><button class="btn" id="ac">Adicionar</button></div><br>${cats.map(c=>`<span class="tag">${esc(c)} <a href="#" onclick="acd('${esc(c)}');return false">✕</a></span> `).join('')}</div>`,
   b:`<div class="box"><table><tr><th>Data</th><th>Serviço</th><th>Cliente</th><th>Profissional</th><th>Status</th></tr>${bk.map(b=>`<tr><td>${fd(b.day)} ${b.hour}</td><td>${esc(b.title)}</td><td>${esc(b.client)}</td><td>${esc(b.provider)}</td><td>${b.status}</td></tr>`).join('')}</table></div>`};
-  app.innerHTML=`<h2>Administração</h2><div class="tabs">${[['u','Usuários'],['c','Categorias'],['b','Agendamentos']].map(([k,v])=>`<button class="${k===tab?'on':''}" onclick="admin('${k}')">${v}</button>`).join('')}</div>${t[tab]}`;
+  app.innerHTML=`<h2>Administração</h2><div class="tabs">${[['u','Usuários'],['d','Demonstrações'],['c','Categorias'],['b','Agendamentos']].map(([k,v])=>`<button class="${k===tab?'on':''}" onclick="admin('${k}')">${v}</button>`).join('')}</div>${t[tab]}`;
   window._at=tab;if($('#ac'))$('#ac').onclick=async()=>{await api('admin_cat_add',{name:$('#nc').value});admin('c')}}
 window.admin=admin;
 window.adel=async id=>{if(confirm('Excluir esta conta e seus dados?')){await api('admin_user_del',{id});admin('u')}};
+window.adelDemo=async id=>{if(confirm('Excluir este perfil demonstrativo, seus serviços e horários?')){await api('admin_demo_del',{id});admin('d')}};
 window.acd=async name=>{await api('admin_cat_del',{name});admin('c')};
 route();
