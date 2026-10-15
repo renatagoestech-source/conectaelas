@@ -19,3 +19,11 @@ A interface estática é publicada pela Vercel a partir da branch `main`. A API 
 O banco contém perfis de demonstração identificados por `is_demo`; eles usam e-mails reservados, não têm contato real e não aceitam agendamentos. A conta administradora inicial é gerenciada diretamente no Supabase; nunca armazene a senha em arquivos do repositório. O painel tem uma aba dedicada para excluir perfis de demonstração e seus dados relacionados.
 
 O seletor de tema oferece modo claro/escuro, lembra a escolha neste navegador e respeita a preferência do sistema na primeira visita.
+
+## Agenda e perfil profissional
+
+- O profissional pode configurar o expediente por dia da semana, com abertura, fechamento, intervalo e duração da consulta. O sistema publica horários para os próximos 60 dias; também é possível abrir horários extras em uma data específica.
+- O painel oferece um link público individual para compartilhar com clientes e permite exibir o perfil do Instagram.
+- Fotos de perfil e de serviços são selecionadas como arquivos JPG, PNG ou WebP. O navegador otimiza imagens grandes; a Edge Function autentica o profissional e grava os arquivos no bucket público `conectaelas-images`.
+- O profissional pode registrar na agenda um atendimento combinado por telefone, WhatsApp ou presencialmente, com serviço, horário e contato da cliente.
+- A busca pública permite definir um preço máximo e ordenar os profissionais pelo menor ou maior preço dos serviços.

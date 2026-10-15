@@ -87,8 +87,9 @@ const idFilter = (id: unknown) => `eq.${Number(id)}`;
 const inFilter = (ids: number[]) => ids.length ? `in.(${ids.join(",")})` : "in.(0)";
 
 async function relatedUsers(ids: number[]) {
-  if (!ids.length) return [];
-  return get("users", { select: "id,name,whatsapp,role,email,created", id: inFilter(ids) });
+  const validIds = [...new Set(ids.filter((id) => Number.isFinite(id) && id > 0))];
+  if (!validIds.length) return [];
+  return get("users", { select: "id,name,whatsapp,role,email,created", id: inFilter(validIds) });
 }
 async function relatedServices(ids: number[]) {
   if (!ids.length) return [];
@@ -97,6 +98,71 @@ async function relatedServices(ids: number[]) {
 async function relatedSlots(ids: number[]) {
   if (!ids.length) return [];
   return get("slots", { select: "id,day,hour,booked,provider_id", id: inFilter(ids) });
+}
+
+function saoPauloNow() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return { day: `${values.year}-${values.month}-${values.day}`, minutes: Number(values.hour) * 60 + Number(values.minute) };
+}
+
+function timeToMinutes(value: unknown) {
+  const text = String(value ?? "");
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(text)) return null;
+  const [hour, minute] = text.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function makeHours(start: unknown, end: unknown, duration: unknown, breakStart?: unknown, breakEnd?: unknown) {
+  const from = timeToMinutes(start), until = timeToMinutes(end), length = Number(duration);
+  if (from === null || until === null || from >= until || !Number.isInteger(length) || length < 15 || length > 240)
+    fail(400, "Confira o início, o fim e a duração dos atendimentos.");
+  const pauseFrom = breakStart ? timeToMinutes(breakStart) : null;
+  const pauseUntil = breakEnd ? timeToMinutes(breakEnd) : null;
+  if ((breakStart || breakEnd) && (pauseFrom === null || pauseUntil === null || pauseFrom >= pauseUntil || pauseFrom < from || pauseUntil > until))
+    fail(400, "O intervalo precisa ficar dentro do expediente e ter início e fim.");
+  const hours: string[] = [];
+  for (let minute = from; minute + length <= until; minute += length) {
+    const overlapsBreak = pauseFrom !== null && pauseUntil !== null && minute < pauseUntil && minute + length > pauseFrom;
+    if (!overlapsBreak) hours.push(`${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`);
+  }
+  return hours;
+}
+
+async function upsertSlots(rows: Record<string, unknown>[]) {
+  for (let offset = 0; offset < rows.length; offset += 300) {
+    await db("slots", "POST", { on_conflict: "provider_id,day,hour" }, rows.slice(offset, offset + 300), "resolution=merge-duplicates,return=minimal");
+  }
+}
+
+async function uploadProviderImage(providerId: number, kind: string, dataUrl: string) {
+  if (!SUPABASE_URL || !SERVICE_KEY) fail(503, "O armazenamento de imagens não está configurado.");
+  if (!["profile", "service"].includes(kind)) fail(400, "Tipo de imagem inválido.");
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) fail(400, "Envie uma imagem JPG, PNG ou WebP.");
+  const mime = match[1], raw = atob(match[2]);
+  if (raw.length > 4 * 1024 * 1024) fail(400, "A imagem precisa ter até 4 MB após a otimização.");
+  const bytes = Uint8Array.from(raw, (char) => char.charCodeAt(0));
+  const validSignature = mime === "image/png"
+    ? bytes.length > 8 && [137,80,78,71,13,10,26,10].every((value, index) => bytes[index] === value)
+    : mime === "image/jpeg"
+      ? bytes.length > 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+      : bytes.length > 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+  if (!validSignature) fail(400, "O arquivo não corresponde a uma imagem válida.");
+  const extension = mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : "webp";
+  const objectPath = `${providerId}/${kind}/${crypto.randomUUID()}.${extension}`;
+  const url = new URL(`/storage/v1/object/conectaelas-images/${objectPath}`, SUPABASE_URL);
+  const result = await fetch(url, { method: "POST", headers: {
+    apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, "content-type": mime, "x-upsert": "false",
+  }, body: bytes });
+  if (!result.ok) {
+    console.error("Supabase image upload error", result.status);
+    fail(500, "Não foi possível carregar a imagem. Tente novamente.");
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/conectaelas-images/${objectPath}`;
 }
 
 async function handle(req: Request) {
@@ -136,6 +202,8 @@ async function handle(req: Request) {
     }
     case "providers": {
       const category = url.searchParams.get("cat") ?? "", query = (url.searchParams.get("q") ?? "").toLocaleLowerCase();
+      const maxPriceText = url.searchParams.get("max_price") ?? "", maxPrice = maxPriceText === "" ? null : Number(maxPriceText);
+      const sort = url.searchParams.get("sort") ?? "price_asc";
       const [users, profiles, services] = await Promise.all([
         get("users", { select: "id,name,is_demo", role: "eq.provider", order: "id.desc", limit: "200" }),
         get("providers", { select: "user_id,category,logo,city,bio" }),
@@ -146,20 +214,25 @@ async function handle(req: Request) {
         const own = services.filter((x: any) => Number(x.provider_id) === Number(u.id));
         return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images };
       }).filter((p: any) => p.category && (!category || p.category === category) && (!query || [p.name,p.category,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
-        .slice(0, 60);
+        .filter((p: any) => maxPrice === null || (Number.isFinite(maxPrice) && p.min_price !== null && p.min_price <= maxPrice))
+        .sort((a: any, b: any) => {
+          if (sort === "price_desc") return (b.min_price ?? -1) - (a.min_price ?? -1) || Number(b.id) - Number(a.id);
+          if (sort === "recent") return Number(b.id) - Number(a.id);
+          return (a.min_price ?? Number.POSITIVE_INFINITY) - (b.min_price ?? Number.POSITIVE_INFINITY) || Number(b.id) - Number(a.id);
+        }).slice(0, 60);
       return result;
     }
     case "provider": {
       const id = Number(url.searchParams.get("id") ?? 0);
       const [u, p] = await Promise.all([
         get("users", { select: "id,name,whatsapp,is_demo", id: idFilter(id), role: "eq.provider", limit: "1" }),
-        get("providers", { select: "category,bio,logo,city", user_id: idFilter(id), limit: "1" }),
+        get("providers", { select: "category,bio,logo,city,instagram_url", user_id: idFilter(id), limit: "1" }),
       ]);
       if (!u.length || !p.length) fail(404, "Não encontrado");
-      const today = new Date().toISOString().slice(0, 10);
+      const today = saoPauloNow().day;
       const [services, slots] = await Promise.all([
         get("services", { select: "*", provider_id: idFilter(id), order: "id.desc" }),
-        get("slots", { select: "id,day,hour", provider_id: idFilter(id), booked: "eq.false", day: `gte.${today}`, order: "day.asc,hour.asc" }),
+        get("slots", { select: "id,day,hour", provider_id: idFilter(id), booked: "eq.false", available: "eq.true", day: `gte.${today}`, order: "day.asc,hour.asc", limit: "500" }),
       ]);
       return { ...u[0], ...p[0], services, slots };
     }
@@ -167,21 +240,39 @@ async function handle(req: Request) {
       const me = await auth(req, ["provider"]);
       const [u,p] = await Promise.all([
         get("users", { select: "name,whatsapp", id: idFilter(me.id), limit: "1" }),
-        get("providers", { select: "category,bio,logo,city", user_id: idFilter(me.id), limit: "1" }),
+        get("providers", { select: "category,bio,logo,city,instagram_url,weekly_schedule", user_id: idFilter(me.id), limit: "1" }),
       ]);
       return { ...(u[0] ?? {}), ...(p[0] ?? {}) };
     }
     case "profile_save": {
       const me = await auth(req, ["provider"]);
+      let instagramUrl = bodyString(input, "instagram_url");
+      if (instagramUrl) {
+        if (/^@?[A-Za-z0-9._]{1,30}$/.test(instagramUrl)) instagramUrl = `https://www.instagram.com/${instagramUrl.replace(/^@/, "")}/`;
+        try {
+          const parsed = new URL(instagramUrl);
+          if (parsed.protocol !== "https:" || !["instagram.com", "www.instagram.com"].includes(parsed.hostname) || parsed.username || parsed.password)
+            fail(400, "Informe um link válido do Instagram.");
+          instagramUrl = `https://www.instagram.com${parsed.pathname.replace(/\/$/, "")}/`;
+        } catch (error) {
+          if (error instanceof ApiError) throw error;
+          fail(400, "Informe um link válido do Instagram.");
+        }
+      }
       await patch("users", { id: idFilter(me.id) }, { name: bodyString(input,"name"), whatsapp: bodyString(input,"whatsapp") });
-      await patch("providers", { user_id: idFilter(me.id) }, { category: bodyString(input,"category"), bio: bodyString(input,"bio"), logo: bodyString(input,"logo"), city: bodyString(input,"city") });
+      await patch("providers", { user_id: idFilter(me.id) }, { category: bodyString(input,"category"), bio: bodyString(input,"bio"), logo: bodyString(input,"logo"), city: bodyString(input,"city"), instagram_url: instagramUrl });
       return { ok: 1 };
+    }
+    case "image_upload": {
+      const me = await auth(req, ["provider"]);
+      return { url: await uploadProviderImage(me.id, bodyString(input, "kind"), String(input.data_url ?? "")) };
     }
     case "service_save": {
       const me = await auth(req, ["provider"]);
       const title = bodyString(input,"title"), price = Number(input.price);
-      if (!title || !Number.isFinite(price) || price < 0) fail(400, "Informe título e valor válido.");
-      const images = String(input.images ?? "").split("\n").map((x: string) => x.trim()).filter(Boolean);
+      if (!title || String(input.price ?? "").trim() === "" || !Number.isFinite(price) || price < 0) fail(400, "Informe título e valor válido.");
+      const images = (Array.isArray(input.images) ? input.images : String(input.images ?? "").split("\n"))
+        .map((image: unknown) => String(image).trim()).filter((image: string) => /^https:\/\//.test(image)).slice(0, 4);
       await post("services", { provider_id: me.id, title, descr: bodyString(input,"descr"), price, images: JSON.stringify(images) });
       return { ok: 1 };
     }
@@ -190,41 +281,100 @@ async function handle(req: Request) {
       await del("services", { id: idFilter(input.id), provider_id: idFilter(me.id) });
       return { ok: 1 };
     }
+    case "schedule_save": {
+      const me = await auth(req, ["provider"]), supplied = input.schedule;
+      if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) fail(400, "Informe o expediente semanal.");
+      const schedule: Record<string, any> = {};
+      for (let day = 0; day < 7; day++) {
+        const entry = supplied[String(day)] ?? {};
+        const active = Boolean(entry.active);
+        if (active) {
+          const hours = makeHours(entry.start, entry.end, entry.duration, entry.break_start, entry.break_end);
+          if (!hours.length) fail(400, `Não há horários que caibam no expediente de ${["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"][day]}.`);
+        }
+        schedule[String(day)] = {
+          active,
+          start: String(entry.start ?? "09:00"), end: String(entry.end ?? "17:00"),
+          break_start: String(entry.break_start ?? ""), break_end: String(entry.break_end ?? ""), duration: Number(entry.duration ?? 30),
+        };
+      }
+      await patch("providers", { user_id: idFilter(me.id) }, { weekly_schedule: schedule });
+      const now = saoPauloNow(), firstDay = new Date(`${now.day}T12:00:00Z`), rows: Record<string, unknown>[] = [];
+      for (let offset = 0; offset < 60; offset++) {
+        const date = new Date(firstDay.getTime() + offset * 86400000), day = date.toISOString().slice(0, 10);
+        const entry = schedule[String(date.getUTCDay())];
+        if (!entry.active) continue;
+        const hours = makeHours(entry.start, entry.end, entry.duration, entry.break_start, entry.break_end);
+        for (const hour of hours) {
+          const minute = timeToMinutes(hour)!;
+          if (day === now.day && minute <= now.minutes) continue;
+          rows.push({ provider_id: me.id, day, hour, available: true, schedule_managed: true });
+        }
+      }
+      await patch("slots", { provider_id: idFilter(me.id), day: `gte.${now.day}`, schedule_managed: "eq.true" }, { available: false });
+      await upsertSlots(rows);
+      return { ok: 1, generated: rows.length };
+    }
+    case "slot_generate": {
+      const me = await auth(req, ["provider"]), day = bodyString(input, "day"), now = saoPauloNow();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < now.day) fail(400, "Escolha uma data de hoje em diante.");
+      const hours = makeHours(input.start, input.end, input.duration);
+      const futureHours = hours.filter((hour) => day !== now.day || timeToMinutes(hour)! > now.minutes);
+      if (!futureHours.length) fail(400, "Não há horários futuros nesse intervalo.");
+      await upsertSlots(futureHours.map((hour) => ({ provider_id: me.id, day, hour, available: true, schedule_managed: false })));
+      return { ok: 1, generated: futureHours.length };
+    }
     case "slot_add": {
       const me = await auth(req, ["provider"]), day = bodyString(input,"day");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) fail(400, "Informe uma data válida.");
       for (const raw of Array.isArray(input.hours) ? input.hours : []) {
         const hour = String(raw).trim();
         if (/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(hour))
-          await db("slots", "POST", { on_conflict: "provider_id,day,hour" }, { provider_id: me.id, day, hour }, "resolution=ignore-duplicates,return=minimal");
+          await db("slots", "POST", { on_conflict: "provider_id,day,hour" }, { provider_id: me.id, day, hour, available: true, schedule_managed: false }, "resolution=merge-duplicates,return=minimal");
       }
       return { ok: 1 };
     }
     case "my_slots": {
-      const me = await auth(req, ["provider"]), today = new Date().toISOString().slice(0, 10);
-      return await get("slots", { select: "id,day,hour,booked", provider_id: idFilter(me.id), day: `gte.${today}`, order: "day.asc,hour.asc" });
+      const me = await auth(req, ["provider"]), today = saoPauloNow().day;
+      return await get("slots", { select: "id,day,hour,booked,available", provider_id: idFilter(me.id), day: `gte.${today}`, or: "(available.eq.true,booked.eq.true)", order: "day.asc,hour.asc", limit: "1000" });
     }
     case "slot_del": {
       const me = await auth(req, ["provider"]);
-      await del("slots", { id: idFilter(input.id), provider_id: idFilter(me.id), booked: "eq.false" });
+      await patch("slots", { id: idFilter(input.id), provider_id: idFilter(me.id), booked: "eq.false" }, { available: false });
       return { ok: 1 };
     }
     case "book": {
       const me = await auth(req, ["client"]);
-      const sl = first(await get("slots", { select: "id,provider_id", id: idFilter(input.slot_id), booked: "eq.false", limit: "1" }));
+      const sl = first(await get("slots", { select: "id,provider_id", id: idFilter(input.slot_id), booked: "eq.false", available: "eq.true", limit: "1" }));
       if (!sl) fail(400, "Horário indisponível");
       const owner = first(await get("users", { select: "is_demo", id: idFilter(sl.provider_id), role: "eq.provider", limit: "1" }));
       if (owner?.is_demo) fail(400, "Este perfil demonstrativo não aceita agendamentos.");
       const sv = first(await get("services", { select: "id", id: idFilter(input.service_id), provider_id: idFilter(sl.provider_id), limit: "1" }));
       if (!sv) fail(400, "Horário indisponível");
-      const booked = await patch("slots", { id: idFilter(sl.id), booked: "eq.false" }, { booked: true });
+      const booked = await patch("slots", { id: idFilter(sl.id), booked: "eq.false", available: "eq.true" }, { booked: true });
       if (!booked.length) fail(400, "Horário acabou de ser reservado");
       await post("bookings", { slot_id: sl.id, service_id: sv.id, client_id: me.id, provider_id: sl.provider_id });
       return { ok: 1 };
     }
+    case "manual_book": {
+      const me = await auth(req, ["provider"]);
+      const name = bodyString(input, "name"), whatsapp = bodyString(input, "whatsapp");
+      if (!name || name.length > 120 || whatsapp.replace(/\D/g, "").length < 8 || whatsapp.length > 30)
+        fail(400, "Informe o nome e um WhatsApp válido da cliente.");
+      const owner = first(await get("users", { select: "is_demo", id: idFilter(me.id), role: "eq.provider", limit: "1" }));
+      if (owner?.is_demo) fail(400, "Perfis demonstrativos não aceitam agendamentos.");
+      const sl = first(await get("slots", { select: "id,provider_id", id: idFilter(input.slot_id), provider_id: idFilter(me.id), booked: "eq.false", available: "eq.true", limit: "1" }));
+      if (!sl) fail(400, "Esse horário não está mais disponível.");
+      const sv = first(await get("services", { select: "id", id: idFilter(input.service_id), provider_id: idFilter(me.id), limit: "1" }));
+      if (!sv) fail(400, "Escolha um serviço seu.");
+      const updated = await patch("slots", { id: idFilter(sl.id), provider_id: idFilter(me.id), booked: "eq.false", available: "eq.true" }, { booked: true });
+      if (!updated.length) fail(400, "Esse horário acabou de ser reservado.");
+      await post("bookings", { slot_id: sl.id, service_id: sv.id, client_id: null, provider_id: me.id, manual_client_name: name, manual_client_whatsapp: whatsapp });
+      return { ok: 1 };
+    }
     case "bookings": {
       const me = await auth(req, ["client","provider"]), client = me.role === "client";
-      const rows = await get("bookings", { select: "id,status,slot_id,service_id,client_id,provider_id", [client ? "client_id" : "provider_id"]: idFilter(me.id), order: "created.desc", limit: "200" });
+      const rows = await get("bookings", { select: "id,status,slot_id,service_id,client_id,provider_id,manual_client_name,manual_client_whatsapp", [client ? "client_id" : "provider_id"]: idFilter(me.id), order: "created.desc", limit: "200" });
       const [slots, services, people] = await Promise.all([
         relatedSlots([...new Set<number>(rows.map((r: any) => Number(r.slot_id)))]),
         relatedServices([...new Set<number>(rows.map((r: any) => Number(r.service_id)))]),
@@ -234,7 +384,7 @@ async function handle(req: Request) {
         const sl = slots.find((x: any) => Number(x.id) === Number(b.slot_id));
         const sv = services.find((x: any) => Number(x.id) === Number(b.service_id));
         const other = people.find((x: any) => Number(x.id) === Number(client ? b.provider_id : b.client_id));
-        return { id: b.id, status: b.status, day: sl?.day, hour: sl?.hour, title: sv?.title, price: sv?.price, other_name: other?.name, other_whatsapp: other?.whatsapp };
+        return { id: b.id, status: b.status, day: sl?.day, hour: sl?.hour, title: sv?.title, price: sv?.price, other_name: other?.name ?? b.manual_client_name, other_whatsapp: other?.whatsapp ?? b.manual_client_whatsapp };
       }).sort((a: any,b: any) => `${b.day} ${b.hour}`.localeCompare(`${a.day} ${a.hour}`));
     }
     case "booking_status": {
@@ -279,13 +429,13 @@ async function handle(req: Request) {
     }
     case "admin_bookings": {
       await auth(req,["admin"]);
-      const rows = await get("bookings", { select: "id,status,slot_id,service_id,client_id,provider_id", order: "id.desc", limit: "100" });
+      const rows = await get("bookings", { select: "id,status,slot_id,service_id,client_id,provider_id,manual_client_name", order: "id.desc", limit: "100" });
       const [slots, services, people] = await Promise.all([
         relatedSlots([...new Set<number>(rows.map((r: any) => Number(r.slot_id)))]),
         relatedServices([...new Set<number>(rows.map((r: any) => Number(r.service_id)))]),
         relatedUsers([...new Set<number>(rows.flatMap((r: any) => [Number(r.client_id),Number(r.provider_id)]))]),
       ]);
-      return rows.map((b: any) => ({ id:b.id, status:b.status, day:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.day, hour:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.hour, title:services.find((x:any)=>Number(x.id)===Number(b.service_id))?.title, client:people.find((x:any)=>Number(x.id)===Number(b.client_id))?.name, provider:people.find((x:any)=>Number(x.id)===Number(b.provider_id))?.name }));
+      return rows.map((b: any) => ({ id:b.id, status:b.status, day:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.day, hour:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.hour, title:services.find((x:any)=>Number(x.id)===Number(b.service_id))?.title, client:people.find((x:any)=>Number(x.id)===Number(b.client_id))?.name ?? b.manual_client_name, provider:people.find((x:any)=>Number(x.id)===Number(b.provider_id))?.name }));
     }
     default: fail(404, "Ação inválida");
   }
