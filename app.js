@@ -7,7 +7,7 @@ const imgs=j=>{try{return JSON.parse(j)||[]}catch{return[]}};
 const bg=u=>u?`style="background-image:url('${esc(u)}')"`:'';
 const fd=d=>d.split('-').reverse().join('/');
 async function api(a,body,qs='',quiet=false){
-  const r=await fetch(`/api/index.php?a=${a}${qs}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Token':T},body:body?JSON.stringify(body):undefined});
+  const r=await fetch(`${window.SUPABASE_URL}/functions/v1/conectaelas-api?a=${a}${qs}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Token':T,'apikey':window.SUPABASE_PUBLISHABLE_KEY},body:body?JSON.stringify(body):undefined});
   const d=await r.json().catch(()=>({error:'Resposta inválida'}));
   if(!r.ok){if(r.status===401&&T)logout(true);if(!quiet)alert(d.error||'Erro');throw d}return d}
 function logout(s){localStorage.clear();U=null;T='';if(!s)location.hash='#/';nav();}
