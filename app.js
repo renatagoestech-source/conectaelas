@@ -12,7 +12,7 @@ async function api(a,body,qs='',quiet=false){
   const r=await fetch(`${window.SUPABASE_URL}/functions/v1/conectaelas-api?a=${a}${qs}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Token':T,'apikey':window.SUPABASE_PUBLISHABLE_KEY},body:body?JSON.stringify(body):undefined});
   const d=await r.json().catch(()=>({error:'Resposta inválida'}));
   if(!r.ok){if(r.status===401&&T)logout(true);if(!quiet)alert(d.error||'Erro');throw d}return d}
-function logout(s){localStorage.clear();U=null;T='';if(!s)location.hash='#/';nav();}
+function logout(s){localStorage.removeItem('u');localStorage.removeItem('t');U=null;T='';if(!s)location.hash='#/';nav();}
 function nav(){$('#nav').innerHTML=`<a href="#/">Início</a>`+(U?`<a href="#/${U.role==='admin'?'admin':'painel'}">${U.role==='admin'?'Admin':U.role==='provider'?'Meu painel':'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`:`<a href="#/login">Entrar</a><a class="btn sm" href="#/cadastro">Cadastrar</a>`)+`<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema">${document.documentElement.dataset.theme==='dark'?'Modo claro':'Modo escuro'}</button>`;$('#theme-toggle').onclick=toggleTheme}
 function route(){nav();const h=location.hash.slice(2).split('/');({'':home,p:()=>provider(h[1]),login,cadastro,painel,admin}[h[0]]||home)();scrollTo(0,0)}
 addEventListener('hashchange',route);
