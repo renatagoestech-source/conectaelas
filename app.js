@@ -6,17 +6,18 @@ const wa=(n,m)=>`https://wa.me/55${String(n).replace(/\D/g,'')}?text=${encodeURI
 const imgs=j=>{try{return JSON.parse(j)||[]}catch{return[]}};
 const bg=u=>u?`style="background-image:url('${esc(u)}')"`:'';
 const fd=d=>d.split('-').reverse().join('/');
-async function api(a,body,qs=''){
+async function api(a,body,qs='',quiet=false){
   const r=await fetch(`/api/index.php?a=${a}${qs}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json','X-Token':T},body:body?JSON.stringify(body):undefined});
   const d=await r.json().catch(()=>({error:'Resposta inválida'}));
-  if(!r.ok){if(r.status===401&&T)logout(true);alert(d.error||'Erro');throw d}return d}
+  if(!r.ok){if(r.status===401&&T)logout(true);if(!quiet)alert(d.error||'Erro');throw d}return d}
 function logout(s){localStorage.clear();U=null;T='';if(!s)location.hash='#/';nav();}
 function nav(){$('#nav').innerHTML=`<a href="#/">Início</a>`+(U?`<a href="#/${U.role==='admin'?'admin':'painel'}">${U.role==='admin'?'Admin':U.role==='provider'?'Meu painel':'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`:`<a href="#/login">Entrar</a><a class="btn sm" href="#/cadastro">Cadastrar</a>`)}
 function route(){nav();const h=location.hash.slice(2).split('/');({'':home,p:()=>provider(h[1]),login,cadastro,painel,admin}[h[0]]||home)();scrollTo(0,0)}
 addEventListener('hashchange',route);
 
 async function home(){
-  const cats=await api('cats');
+  let cats;
+  try { cats=await api('cats',null,'',true); } catch(e) { app.innerHTML=`<div class="box"><h2>Estamos preparando o Conecta Ela's</h2><p class="muted">A busca e os agendamentos ficarão disponíveis quando o banco de dados for configurado.</p><p class="muted">${esc(e?.error||'Serviço temporariamente indisponível.')}</p></div>`; return; }
   app.innerHTML=`<div class="hero"><h1>Encontre o profissional de beleza ideal</h1><div class="bar"><input id="q" placeholder="Buscar serviço ou profissional..."><select id="cat"><option value="">Todas as categorias</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select><button class="btn" style="background:#fff;color:var(--p)" id="go">Buscar</button></div></div><div class="grid" id="list"></div>`;
   const load=async()=>{const l=await api('providers',null,`&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}`);
     $('#list').innerHTML=l.length?l.map(p=>`<a class="card" href="#/p/${p.id}"><div class="img" ${bg(imgs(p.img)[0])}><div class="logo" ${bg(p.logo)}></div></div><div class="info"><b>${esc(p.name)}</b><br><span class="tag">${esc(p.category||'')}</span><div class="muted">${esc(p.city||'')}</div>${p.min_price?`<div>a partir de <span class="price">${brl(p.min_price)}</span></div>`:''}</div></a>`).join(''):'<p class="muted">Nenhum profissional encontrado.</p>'};

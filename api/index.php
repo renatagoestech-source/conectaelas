@@ -5,7 +5,15 @@ $a = $_GET['a'] ?? '';
 $S = getenv('APP_SECRET') ?: '';
 function require_secret() { global $S; if (strlen($S) < 32) throw new RuntimeException('APP_SECRET ausente ou fraco'); }
 function out($d, $c = 200) { http_response_code($c); echo json_encode($d, JSON_UNESCAPED_UNICODE); exit; }
-function db() { static $p; if (!$p) $p = new PDO('mysql:host='.getenv('DB_HOST').';port='.(getenv('DB_PORT') ?: 3306).';dbname='.getenv('DB_NAME').';charset=utf8mb4', getenv('DB_USER'), getenv('DB_PASS'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false]); return $p; }
+function db() {
+  static $p;
+  if (!$p) {
+    foreach (['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASS'] as $key)
+      if (getenv($key) === false || getenv($key) === '') throw new RuntimeException('CONFIG:O banco de dados ainda não foi configurado no Vercel.');
+    $p = new PDO('mysql:host='.getenv('DB_HOST').';port='.(getenv('DB_PORT') ?: 3306).';dbname='.getenv('DB_NAME').';charset=utf8mb4', getenv('DB_USER'), getenv('DB_PASS'), [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false]);
+  }
+  return $p;
+}
 function q($s, $x = []) { $t = db()->prepare($s); $t->execute($x); return $t; }
 function token($u) { require_secret(); global $S; $p = base64_encode(json_encode(['id' => (int)$u['id'], 'role' => $u['role'], 'exp' => time() + 604800])); return $p.'.'.hash_hmac('sha256', $p, $S); }
 function auth($roles = null) {
@@ -124,4 +132,4 @@ case 'admin_bookings': auth(['admin']);
   out(q('SELECT b.id,b.status,sl.day,sl.hour,sv.title,c.name AS client,p.name AS provider FROM bookings b JOIN slots sl ON sl.id=b.slot_id JOIN services sv ON sv.id=b.service_id JOIN users c ON c.id=b.client_id JOIN users p ON p.id=b.provider_id ORDER BY b.id DESC LIMIT 100')->fetchAll());
 
 default: out(['error' => 'Ação inválida'], 404);
-} } catch (Throwable $e) { error_log((string)$e); out(['error' => 'Erro interno do servidor'], 500); }
+} } catch (Throwable $e) { error_log((string)$e); if ($e instanceof RuntimeException && str_starts_with($e->getMessage(), 'CONFIG:')) out(['error' => substr($e->getMessage(), 7)], 503); out(['error' => 'Erro interno do servidor'], 500); }
