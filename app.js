@@ -12,6 +12,7 @@ const imgs = (value) => { try { return Array.isArray(value) ? value : JSON.parse
 const bg = (url) => url ? `style="background-image:url('${esc(url)}')"` : '';
 const fd = (date) => date ? date.split('-').reverse().join('/') : '';
 const DAYS = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+const ratingSummary = (average, count) => count ? `<span class="rating-summary" title="${count} avaliação${count === 1 ? '' : 'ões'}">★ ${Number(average).toFixed(1)} <small>(${count})</small></span>` : '<span class="muted rating-summary">Sem avaliações</span>';
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 function todayInBrazil() {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -96,7 +97,7 @@ async function home() {
     $('#results-count').textContent = `${providers.length} profissional${providers.length === 1 ? '' : 'is'} encontrado${providers.length === 1 ? '' : 's'}`;
     $('#list').innerHTML = providers.length ? providers.map((professional) => { const cover = imgs(professional.img)[0] || professional.logo || 'assets/conectafemme-logo.png'; return `<a class="card" href="#/p/${professional.id}">
       <div class="img" ${bg(cover)}><div class="logo" ${bg(professional.logo || cover)}></div></div>
-      <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc(professional.city || '')}</div>
+      <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc(professional.city || '')}</div>${ratingSummary(professional.rating_avg, professional.review_count)}
       ${professional.min_price != null ? `<div>a partir de <span class="price">${brl(professional.min_price)}</span></div>` : '<div class="muted">Consulte os serviços</div>'}<span class="card-link btn sm">Ver perfil <span aria-hidden="true">→</span></span></div></a>`; }).join('') : '<p class="muted">Nenhum profissional encontrado. Tente ampliar o preço máximo ou alterar a categoria.</p>';
   };
   $('#go').onclick = load;
@@ -121,7 +122,7 @@ async function provider(id) {
   const instagram = professional.instagram_url
     ? `<a class="btn out sm" href="${esc(professional.instagram_url)}" target="_blank" rel="noopener noreferrer">Instagram</a>`
     : '';
-  app.innerHTML = `<div class="profile-head"><div class="lg" ${bg(professional.logo)}></div><div><h2 style="margin:0">${esc(professional.name)}</h2><span class="tag">${esc(professional.category || '')}</span> ${professional.is_demo ? '<span class="tag demo-tag">Perfil demonstrativo</span>' : ''} <span class="muted">${esc(professional.city || '')}</span><p>${esc(professional.bio || '')}</p>
+  app.innerHTML = `<div class="profile-head"><div class="lg" ${bg(professional.logo)}></div><div><h2 style="margin:0">${esc(professional.name)}</h2><span class="tag">${esc(professional.category || '')}</span> ${professional.is_demo ? '<span class="tag demo-tag">Perfil demonstrativo</span>' : ''} <span class="muted">${esc(professional.city || '')}</span><div class="profile-rating">${ratingSummary(professional.rating_avg, professional.review_count)}</div><p>${esc(professional.bio || '')}</p>
     ${professional.is_demo ? '<p class="muted">Este perfil fictício é apenas para demonstração; o contato não está ativo.</p>' : `<div class="profile-actions"><a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(professional.whatsapp, `Olá ${professional.name}! Vi seu perfil no ConectaFemme.`)}">WhatsApp</a>${instagram}</div>`}</div></div>
     <h3>Serviços</h3><div class="row">${professional.services.map((service) => {
       const images = imgs(service.images);
@@ -129,6 +130,7 @@ async function provider(id) {
         <div class="thumbs">${images.map((image) => `<img src="${esc(image)}" alt="Foto de ${esc(service.title)}" onclick="document.getElementById('m${service.id}').src=this.src">`).join('')}</div><h4>${esc(service.title)}</h4><p class="muted">${esc(service.descr)}</p><div class="price">${brl(service.price)}</div>
         ${professional.is_demo ? '<span class="tag demo-tag">Serviço de exemplo</span>' : `<button class="btn sm" data-s="${service.id}">Escolher</button>`}</div>`;
     }).join('') || '<p class="muted">Sem serviços ainda.</p>'}</div>
+    ${professional.reviews?.length ? `<div class="box reviews-box"><div class="section-heading"><h3>Avaliações de clientes</h3>${ratingSummary(professional.rating_avg, professional.review_count)}</div><div class="review-list">${professional.reviews.slice(0, 6).map((review) => `<article class="review-item"><div><strong>${esc(review.client_name || 'Cliente')}</strong><span class="review-stars">${'★'.repeat(Number(review.rating))}${'☆'.repeat(5 - Number(review.rating))}</span></div><p>${esc(review.comment || 'Atendimento avaliado pela cliente.')}</p></article>`).join('')}</div></div>` : ''}
     ${professional.is_demo ? `<div class="box"><h3>Agenda de exemplo</h3><p class="demo-note">Horários ilustrativos. Perfis fictícios não aceitam agendamentos.</p><div class="slots">${professional.slots.map((slot) => `<span class="tag">${fd(slot.day)} · ${slot.hour}</span>`).join('') || '<span class="muted">Agenda de demonstração.</span>'}</div></div>` : `<div class="box"><h3>Agendar</h3><p id="sel" class="muted">Escolha um serviço acima.</p><label>Dia</label><select id="day"><option value="">Selecione</option>${days.map((day) => `<option value="${day}">${fd(day)}</option>`).join('')}</select><label>Horário disponível</label><div class="slots" id="hrs"></div><br><button class="btn" id="bk">Confirmar agendamento</button></div>`}`;
   if (!professional.is_demo) {
     document.querySelectorAll('[data-s]').forEach((button) => button.onclick = () => {
@@ -176,9 +178,18 @@ function authForm(register) {
 const login = () => authForm(false);
 const cadastro = () => authForm(true);
 
+const statusLabel = (status) => ({ pendente: 'Pendente', confirmado: 'Confirmado', concluido: 'OK', cancelado: 'Cancelado' }[status] || status);
 function bookTable(bookings) {
-  return `<table><tr><th>Data</th><th>Serviço</th><th>${U.role === 'client' ? 'Profissional' : 'Cliente'}</th><th>Status</th><th></th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${booking.hour}</td><td>${esc(booking.title)}<br>${brl(booking.price)}</td><td>${esc(booking.other_name || 'Cliente')}</td><td>${esc(booking.status)}</td><td>${booking.other_whatsapp ? `<a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(booking.other_whatsapp, `Olá! Sobre o agendamento de ${booking.title} em ${fd(booking.day)} às ${booking.hour}.`)}">WhatsApp</a>` : ''}${U.role === 'provider' && booking.status === 'pendente' ? ` <button class="btn sm" onclick="st(${booking.id},'confirmado')">Confirmar</button>` : ''}${booking.status !== 'cancelado' ? ` <button class="btn red sm" onclick="st(${booking.id},'cancelado')">Cancelar</button>` : ''}</td></tr>`).join('')}</table>`;
+  return `<table><tr><th>Data</th><th>Serviço</th><th>${U.role === 'client' ? 'Profissional' : 'Cliente'}</th><th>Status</th><th></th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${booking.hour}</td><td>${esc(booking.title)}<br>${brl(booking.price)}</td><td>${esc(booking.other_name || 'Cliente')}</td><td><span class="status-pill status-${esc(booking.status)}">${statusLabel(booking.status)}</span></td><td>${booking.other_whatsapp ? `<a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(booking.other_whatsapp, `Olá! Sobre o agendamento de ${booking.title} em ${fd(booking.day)} às ${booking.hour}.`)}">WhatsApp</a>` : ''}${U.role === 'client' && booking.can_review ? ` <button class="btn sm" onclick="rateBooking(${booking.id})">Avaliar</button>` : ''}${U.role === 'provider' && booking.status === 'pendente' ? ` <button class="btn sm" onclick="st(${booking.id},'confirmado')">Confirmar</button>` : ''}${booking.status !== 'cancelado' && booking.status !== 'concluido' ? ` <button class="btn red sm" onclick="st(${booking.id},'cancelado')">Cancelar</button>` : ''}</td></tr>`).join('')}</table>`;
 }
+window.rateBooking = async (id) => {
+  const rating = Number(prompt('De 1 a 5, qual nota você dá para o atendimento?'));
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return alert('Informe uma nota inteira de 1 a 5.');
+  const comment = prompt('Quer deixar um comentário? (opcional)') || '';
+  await api('review_add', { booking_id: id, rating, comment });
+  alert('Avaliação publicada. Obrigado por compartilhar sua experiência!');
+  painel();
+};
 window.st = async (id, status) => { await api('booking_status', { id, status }); painel(); };
 
 function weeklyScheduleEditor(schedule = {}) {
@@ -318,23 +329,22 @@ async function painel(tab = 'ag') {
 window.painel = painel;
 window.del = async (action, id) => { await api(action, { id }); painel(window._tab); };
 
-async function admin(tab = 'u') {
+async function admin(tab = 'p') {
   if (!U || U.role !== 'admin') return location.hash = '#/login';
   const [users, categories, bookings] = await Promise.all([api('admin_users'), api('cats'), api('admin_bookings')]);
-  const demos = users.filter((user) => user.is_demo);
   const professionals = users.filter((user) => user.role === 'provider');
   const clients = users.filter((user) => user.role === 'client');
   const userTable = (people, title, empty) => `<div class="box admin-user-group"><h3>${title}</h3>${people.length ? `<table><tr><th>Nome</th><th>Especialidade</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${people.map((user) => `<tr><td>${esc(user.name)} ${user.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}</td><td>${user.role === 'provider' ? esc(user.category || 'Sem categoria') : '—'}</td><td>${esc(user.email)}</td><td>${esc(user.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${user.id})">Excluir</button></td></tr>`).join('')}</table>` : `<p class="muted">${empty}</p>`}</div>`;
   const content = {
-    u: `${userTable(professionals, 'Profissionais', 'Nenhum profissional cadastrado.')} ${userTable(clients, 'Clientes', 'Nenhum cliente cadastrado.')}`,
-    d: `<div class="box"><p class="muted">Estes perfis são fictícios e estão identificados como demonstração no site público. Removê-los também apaga seus serviços e horários.</p>${demos.length ? `<table><tr><th>Profissional demonstrativo</th><th>Categoria</th><th>E-mail</th><th></th></tr>${demos.map((user) => `<tr><td>${esc(user.name)}</td><td>${esc(user.category || '')}</td><td>${esc(user.email)}</td><td><button class="btn red sm" onclick="adelDemo(${user.id})">Excluir demonstração</button></td></tr>`).join('')}</table>` : '<p class="muted">Nenhum perfil demonstrativo ativo.</p>'}</div>`,
-    c: `<div class="box"><div class="bar"><input id="nc" placeholder="Nova categoria"><button class="btn" id="ac">Adicionar</button></div><br>${categories.map((category) => `<span class="tag">${esc(category)} <a href="#" onclick="acd('${esc(category)}');return false">✕</a></span> `).join('')}</div>`,
-    b: `<div class="box"><table><tr><th>Data</th><th>Serviço</th><th>Cliente</th><th>Profissional</th><th>Status</th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${esc(booking.hour)}</td><td>${esc(booking.title)}</td><td>${esc(booking.client || 'Agendamento manual')}</td><td>${esc(booking.provider)}</td><td>${esc(booking.status)}</td></tr>`).join('')}</table></div>`,
+    p: userTable(professionals, 'Profissionais', 'Nenhum profissional cadastrado. Os perfis DEMO ficam nesta aba para exclusão posterior.'),
+    c: userTable(clients, 'Clientes', 'Nenhum cliente cadastrado.'),
+    k: `<div class="box"><div class="bar"><input id="nc" placeholder="Nova categoria"><button class="btn" id="ac">Adicionar</button></div><br>${categories.map((category) => `<span class="tag">${esc(category)} <a href="#" onclick="acd('${esc(category)}');return false">✕</a></span> `).join('')}</div>`,
+    b: `<div class="box"><table><tr><th>Data</th><th>Serviço</th><th>Cliente</th><th>Profissional</th><th>Status</th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${esc(booking.hour)}</td><td>${esc(booking.title)}</td><td>${esc(booking.client || 'Agendamento manual')}</td><td>${esc(booking.provider)}</td><td><span class="status-pill status-${esc(booking.status)}">${statusLabel(booking.status)}</span></td></tr>`).join('')}</table></div>`,
     s: `<div class="box security-box"><h3>Alterar senha administrativa</h3><p class="muted">Use esta área para trocar a senha do acesso administrativo. A senha atual é necessária e a nova senha deve ter pelo menos 8 caracteres.</p><label>Senha atual</label><input id="admin-current-password" type="password" autocomplete="current-password"><label>Nova senha</label><input id="admin-new-password" type="password" minlength="8" autocomplete="new-password"><label>Confirmar nova senha</label><input id="admin-confirm-password" type="password" minlength="8" autocomplete="new-password"><br><br><button class="btn" id="change-admin-password" type="button">Salvar nova senha</button></div>`,
   };
-  app.innerHTML = `<h2>Administração</h2><div class="tabs">${[['u','Usuários'],['d','Demonstrações'],['c','Categorias'],['b','Agendamentos'],['s','Segurança']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
+  app.innerHTML = `<section class="admin-heading"><div><span class="eyebrow">PAINEL DE CONTROLE</span><h2>Administração</h2><p class="muted">Acompanhe a comunidade e a operação do ConectaFemme.</p></div><div class="admin-stat"><strong>${professionals.length + clients.length}</strong><span>usuários ativos</span></div></section><div class="tabs admin-tabs">${[['p','Profissionais'],['c','Clientes'],['k','Categorias'],['b','Agendamentos'],['s','Segurança']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
   window._at = tab;
-  if ($('#ac')) $('#ac').onclick = async () => { await api('admin_cat_add', { name: $('#nc').value }); admin('c'); };
+  if ($('#ac')) $('#ac').onclick = async () => { await api('admin_cat_add', { name: $('#nc').value }); admin('k'); };
   if ($('#change-admin-password')) $('#change-admin-password').onclick = async () => {
     const current_password = $('#admin-current-password').value;
     const new_password = $('#admin-new-password').value;
@@ -347,7 +357,6 @@ async function admin(tab = 'u') {
   };
 }
 window.admin = admin;
-window.adel = async (id) => { if (confirm('Excluir esta conta e seus dados?')) { await api('admin_user_del', { id }); admin('u'); } };
-window.adelDemo = async (id) => { if (confirm('Excluir este perfil demonstrativo, seus serviços e horários?')) { await api('admin_demo_del', { id }); admin('d'); } };
-window.acd = async (name) => { await api('admin_cat_del', { name }); admin('c'); };
+window.adel = async (id) => { if (confirm('Excluir esta conta e seus dados?')) { await api('admin_user_del', { id }); admin(window._at === 'c' ? 'c' : 'p'); } };
+window.acd = async (name) => { await api('admin_cat_del', { name }); admin('k'); };
 route();

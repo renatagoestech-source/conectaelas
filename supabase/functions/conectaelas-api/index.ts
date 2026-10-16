@@ -100,6 +100,22 @@ async function relatedSlots(ids: number[]) {
   return get("slots", { select: "id,day,hour,booked,provider_id", id: inFilter(ids) });
 }
 
+function appointmentPassed(day: unknown, hour: unknown) {
+  const now = saoPauloNow(), date = String(day ?? ""), minutes = timeToMinutes(hour);
+  return Boolean(date && minutes !== null && (date < now.day || (date === now.day && minutes <= now.minutes)));
+}
+async function completeExpiredBookings(rows: any[], slots: any[]) {
+  const expired = rows.filter((booking) => booking.status === "confirmado" && appointmentPassed(slots.find((slot) => Number(slot.id) === Number(booking.slot_id))?.day, slots.find((slot) => Number(slot.id) === Number(booking.slot_id))?.hour));
+  await Promise.all(expired.map(async (booking) => {
+    await patch("bookings", { id: idFilter(booking.id), status: "eq.confirmado" }, { status: "concluido" });
+    booking.status = "concluido";
+  }));
+}
+function ratingSummary(rows: any[]) {
+  const count = rows.length, average = count ? rows.reduce((sum, row) => sum + Number(row.rating), 0) / count : 0;
+  return { rating_avg: Number(average.toFixed(1)), review_count: count };
+}
+
 function saoPauloNow() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
@@ -204,15 +220,17 @@ async function handle(req: Request) {
       const category = url.searchParams.get("cat") ?? "", query = (url.searchParams.get("q") ?? "").toLocaleLowerCase();
       const maxPriceText = url.searchParams.get("max_price") ?? "", maxPrice = maxPriceText === "" ? null : Number(maxPriceText);
       const sort = url.searchParams.get("sort") ?? "price_asc";
-      const [users, profiles, services] = await Promise.all([
+      const [users, profiles, services, reviews] = await Promise.all([
         get("users", { select: "id,name,is_demo", role: "eq.provider", order: "id.desc", limit: "200" }),
         get("providers", { select: "user_id,category,logo,city,bio" }),
         get("services", { select: "id,provider_id,title,price,images", order: "id.asc" }),
+        get("reviews", { select: "provider_id,rating" }),
       ]);
       const result = users.map((u: any) => {
         const p = profiles.find((x: any) => Number(x.user_id) === Number(u.id));
         const own = services.filter((x: any) => Number(x.provider_id) === Number(u.id));
-        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images };
+        const ownReviews = reviews.filter((x: any) => Number(x.provider_id) === Number(u.id));
+        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images, ...ratingSummary(ownReviews) };
       }).filter((p: any) => p.category && (!category || p.category === category) && (!query || [p.name,p.category,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
         .filter((p: any) => maxPrice === null || (Number.isFinite(maxPrice) && p.min_price !== null && p.min_price <= maxPrice))
         .sort((a: any, b: any) => {
@@ -224,9 +242,10 @@ async function handle(req: Request) {
     }
     case "provider": {
       const id = Number(url.searchParams.get("id") ?? 0);
-      const [u, p] = await Promise.all([
+      const [u, p, reviews] = await Promise.all([
         get("users", { select: "id,name,whatsapp,is_demo", id: idFilter(id), role: "eq.provider", limit: "1" }),
         get("providers", { select: "category,bio,logo,city,instagram_url", user_id: idFilter(id), limit: "1" }),
+        get("reviews", { select: "id,rating,comment,created,client_id", provider_id: idFilter(id), order: "created.desc", limit: "50" }),
       ]);
       if (!u.length || !p.length) fail(404, "Não encontrado");
       const today = saoPauloNow().day;
@@ -234,7 +253,9 @@ async function handle(req: Request) {
         get("services", { select: "*", provider_id: idFilter(id), order: "id.desc" }),
         get("slots", { select: "id,day,hour", provider_id: idFilter(id), booked: "eq.false", available: "eq.true", day: `gte.${today}`, order: "day.asc,hour.asc", limit: "500" }),
       ]);
-      return { ...u[0], ...p[0], services, slots };
+      const reviewPeople = await relatedUsers(reviews.map((review: any) => Number(review.client_id)));
+      const reviewList = reviews.map((review: any) => ({ ...review, client_name: reviewPeople.find((person: any) => Number(person.id) === Number(review.client_id))?.name || "Cliente" }));
+      return { ...u[0], ...p[0], services, slots, reviews: reviewList, ...ratingSummary(reviews) };
     }
     case "my_profile": {
       const me = await auth(req, ["provider"]);
@@ -375,16 +396,19 @@ async function handle(req: Request) {
     case "bookings": {
       const me = await auth(req, ["client","provider"]), client = me.role === "client";
       const rows = await get("bookings", { select: "id,status,slot_id,service_id,client_id,provider_id,manual_client_name,manual_client_whatsapp", [client ? "client_id" : "provider_id"]: idFilter(me.id), order: "created.desc", limit: "200" });
-      const [slots, services, people] = await Promise.all([
+      const [slots, services, people, reviews] = await Promise.all([
         relatedSlots([...new Set<number>(rows.map((r: any) => Number(r.slot_id)))]),
         relatedServices([...new Set<number>(rows.map((r: any) => Number(r.service_id)))]),
         relatedUsers([...new Set<number>(rows.map((r: any) => Number(client ? r.provider_id : r.client_id))) ]),
+        client ? get("reviews", { select: "booking_id,rating", client_id: idFilter(me.id) }) : Promise.resolve([]),
       ]);
+      await completeExpiredBookings(rows, slots);
       return rows.map((b: any) => {
         const sl = slots.find((x: any) => Number(x.id) === Number(b.slot_id));
         const sv = services.find((x: any) => Number(x.id) === Number(b.service_id));
         const other = people.find((x: any) => Number(x.id) === Number(client ? b.provider_id : b.client_id));
-        return { id: b.id, status: b.status, day: sl?.day, hour: sl?.hour, title: sv?.title, price: sv?.price, other_name: other?.name ?? b.manual_client_name, other_whatsapp: other?.whatsapp ?? b.manual_client_whatsapp };
+        const reviewed = reviews.some((review: any) => Number(review.booking_id) === Number(b.id));
+        return { id: b.id, status: b.status, day: sl?.day, hour: sl?.hour, title: sv?.title, price: sv?.price, provider_id: b.provider_id, other_name: other?.name ?? b.manual_client_name, other_whatsapp: other?.whatsapp ?? b.manual_client_whatsapp, reviewed, can_review: client && b.status === "concluido" && !reviewed };
       }).sort((a: any,b: any) => `${b.day} ${b.hour}`.localeCompare(`${a.day} ${a.hour}`));
     }
     case "booking_status": {
@@ -396,6 +420,22 @@ async function handle(req: Request) {
         await patch("bookings", { id: idFilter(input.id), [client ? "client_id" : "provider_id"]: idFilter(me.id) }, { status });
         if (status === "cancelado") await patch("slots", { id: idFilter(b.slot_id) }, { booked: false });
       }
+      return { ok: 1 };
+    }
+    case "review_add": {
+      const me = await auth(req, ["client"]);
+      const rating = Number(input.rating), comment = bodyString(input, "comment").slice(0, 500);
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) fail(400, "A nota precisa ser um número inteiro de 1 a 5.");
+      const booking = first(await get("bookings", { select: "id,status,slot_id,provider_id", id: idFilter(input.booking_id), client_id: idFilter(me.id), limit: "1" }));
+      if (!booking) fail(404, "Agendamento não encontrado.");
+      const slot = first(await get("slots", { select: "day,hour", id: idFilter(booking.slot_id), limit: "1" }));
+      if (booking.status === "confirmado" && appointmentPassed(slot?.day, slot?.hour)) {
+        await patch("bookings", { id: idFilter(booking.id), status: "eq.confirmado" }, { status: "concluido" });
+        booking.status = "concluido";
+      }
+      if (booking.status !== "concluido") fail(400, "A avaliação ficará disponível após o horário do atendimento.");
+      if (first(await get("reviews", { select: "id", booking_id: idFilter(booking.id), limit: "1" }))) fail(400, "Este atendimento já foi avaliado.");
+      await post("reviews", { booking_id: booking.id, client_id: me.id, provider_id: booking.provider_id, rating, comment });
       return { ok: 1 };
     }
     case "admin_users": {
@@ -448,6 +488,7 @@ async function handle(req: Request) {
         relatedServices([...new Set<number>(rows.map((r: any) => Number(r.service_id)))]),
         relatedUsers([...new Set<number>(rows.flatMap((r: any) => [Number(r.client_id),Number(r.provider_id)]))]),
       ]);
+      await completeExpiredBookings(rows, slots);
       return rows.map((b: any) => ({ id:b.id, status:b.status, day:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.day, hour:slots.find((x:any)=>Number(x.id)===Number(b.slot_id))?.hour, title:services.find((x:any)=>Number(x.id)===Number(b.service_id))?.title, client:people.find((x:any)=>Number(x.id)===Number(b.client_id))?.name ?? b.manual_client_name, provider:people.find((x:any)=>Number(x.id)===Number(b.provider_id))?.name }));
     }
     default: fail(404, "Ação inválida");
