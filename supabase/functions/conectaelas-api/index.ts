@@ -406,6 +406,19 @@ async function handle(req: Request) {
       ]);
       return users.map((u: any) => ({ ...u, category: providers.find((p: any) => Number(p.user_id) === Number(u.id))?.category ?? null }));
     }
+    case "admin_password_change": {
+      const me = await auth(req, ["admin"]);
+      const currentPassword = String(input.current_password ?? "");
+      const newPassword = String(input.new_password ?? "");
+      const confirmation = String(input.confirm_password ?? "");
+      if (newPassword.length < 8) fail(400, "A nova senha precisa ter pelo menos 8 caracteres.");
+      if (newPassword !== confirmation) fail(400, "A confirmação da nova senha não confere.");
+      const account = first(await get("users", { select: "id,pass", id: idFilter(me.id), role: "eq.admin", limit: "1" }));
+      if (!account || !(await verifyPassword(currentPassword, account.pass))) fail(401, "A senha atual está incorreta.");
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      await patch("users", { id: idFilter(me.id), role: "eq.admin" }, { pass: await hashPassword(newPassword, toHex(salt)) });
+      return { ok: 1 };
+    }
     case "admin_user_del": {
       await auth(req,["admin"]);
       await del("users", { id: idFilter(input.id), role: "neq.admin" });

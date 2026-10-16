@@ -322,15 +322,29 @@ async function admin(tab = 'u') {
   if (!U || U.role !== 'admin') return location.hash = '#/login';
   const [users, categories, bookings] = await Promise.all([api('admin_users'), api('cats'), api('admin_bookings')]);
   const demos = users.filter((user) => user.is_demo);
+  const professionals = users.filter((user) => user.role === 'provider');
+  const clients = users.filter((user) => user.role === 'client');
+  const userTable = (people, title, empty) => `<div class="box admin-user-group"><h3>${title}</h3>${people.length ? `<table><tr><th>Nome</th><th>Especialidade</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${people.map((user) => `<tr><td>${esc(user.name)} ${user.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}</td><td>${user.role === 'provider' ? esc(user.category || 'Sem categoria') : '—'}</td><td>${esc(user.email)}</td><td>${esc(user.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${user.id})">Excluir</button></td></tr>`).join('')}</table>` : `<p class="muted">${empty}</p>`}</div>`;
   const content = {
-    u: `<div class="box"><table><tr><th>Nome</th><th>Tipo</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${users.map((user) => `<tr><td>${esc(user.name)} ${user.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}</td><td>${user.role === 'provider' ? `Profissional · ${esc(user.category || '')}` : 'Cliente'}</td><td>${esc(user.email)}</td><td>${esc(user.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${user.id})">Excluir</button></td></tr>`).join('')}</table></div>`,
+    u: `${userTable(professionals, 'Profissionais', 'Nenhum profissional cadastrado.')} ${userTable(clients, 'Clientes', 'Nenhum cliente cadastrado.')}`,
     d: `<div class="box"><p class="muted">Estes perfis são fictícios e estão identificados como demonstração no site público. Removê-los também apaga seus serviços e horários.</p>${demos.length ? `<table><tr><th>Profissional demonstrativo</th><th>Categoria</th><th>E-mail</th><th></th></tr>${demos.map((user) => `<tr><td>${esc(user.name)}</td><td>${esc(user.category || '')}</td><td>${esc(user.email)}</td><td><button class="btn red sm" onclick="adelDemo(${user.id})">Excluir demonstração</button></td></tr>`).join('')}</table>` : '<p class="muted">Nenhum perfil demonstrativo ativo.</p>'}</div>`,
     c: `<div class="box"><div class="bar"><input id="nc" placeholder="Nova categoria"><button class="btn" id="ac">Adicionar</button></div><br>${categories.map((category) => `<span class="tag">${esc(category)} <a href="#" onclick="acd('${esc(category)}');return false">✕</a></span> `).join('')}</div>`,
     b: `<div class="box"><table><tr><th>Data</th><th>Serviço</th><th>Cliente</th><th>Profissional</th><th>Status</th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${esc(booking.hour)}</td><td>${esc(booking.title)}</td><td>${esc(booking.client || 'Agendamento manual')}</td><td>${esc(booking.provider)}</td><td>${esc(booking.status)}</td></tr>`).join('')}</table></div>`,
+    s: `<div class="box security-box"><h3>Alterar senha administrativa</h3><p class="muted">Use esta área para trocar a senha do acesso administrativo. A senha atual é necessária e a nova senha deve ter pelo menos 8 caracteres.</p><label>Senha atual</label><input id="admin-current-password" type="password" autocomplete="current-password"><label>Nova senha</label><input id="admin-new-password" type="password" minlength="8" autocomplete="new-password"><label>Confirmar nova senha</label><input id="admin-confirm-password" type="password" minlength="8" autocomplete="new-password"><br><br><button class="btn" id="change-admin-password" type="button">Salvar nova senha</button></div>`,
   };
-  app.innerHTML = `<h2>Administração</h2><div class="tabs">${[['u','Usuários'],['d','Demonstrações'],['c','Categorias'],['b','Agendamentos']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
+  app.innerHTML = `<h2>Administração</h2><div class="tabs">${[['u','Usuários'],['d','Demonstrações'],['c','Categorias'],['b','Agendamentos'],['s','Segurança']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
   window._at = tab;
   if ($('#ac')) $('#ac').onclick = async () => { await api('admin_cat_add', { name: $('#nc').value }); admin('c'); };
+  if ($('#change-admin-password')) $('#change-admin-password').onclick = async () => {
+    const current_password = $('#admin-current-password').value;
+    const new_password = $('#admin-new-password').value;
+    const confirm_password = $('#admin-confirm-password').value;
+    if (new_password.length < 8) return alert('A nova senha precisa ter pelo menos 8 caracteres.');
+    if (new_password !== confirm_password) return alert('A confirmação da nova senha não confere.');
+    await api('admin_password_change', { current_password, new_password, confirm_password });
+    alert('Senha administrativa alterada com sucesso.');
+    admin('s');
+  };
 }
 window.admin = admin;
 window.adel = async (id) => { if (confirm('Excluir esta conta e seus dados?')) { await api('admin_user_del', { id }); admin('u'); } };
