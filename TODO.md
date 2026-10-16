@@ -1,6 +1,6 @@
 # TODO
 
-- [x] Adaptar a logo enviada às cores atuais do site e manter o slogan “beleza que conecta” no cabeçalho.
+- [x] Adaptar a logo ConectaFemme enviada e manter o slogan “beleza que conecta” no cabeçalho.
 - [x] Oferecer a todos os usuários um seletor de modo claro/escuro e persistir a opção escolhida.
 - [x] Inserir profissionais fictícios iniciais e identificá-los claramente como demonstrações, sem contatos reais ou agendamentos efetivos.
 - [x] Adicionar ao painel administrativo uma aba para excluir especificamente os perfis demonstrativos.

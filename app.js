@@ -75,7 +75,7 @@ async function home() {
   try {
     categories = await api('cats', null, '', true);
   } catch (error) {
-    app.innerHTML = `<div class="box"><h2>Estamos preparando o Conecta Ela's</h2><p class="muted">A busca e os agendamentos ficarão disponíveis quando o banco de dados for configurado.</p><p class="muted">${esc(error?.error || 'Serviço temporariamente indisponível.')}</p></div>`;
+    app.innerHTML = `<div class="box"><h2>Estamos preparando o ConectaFemme</h2><p class="muted">A busca e os agendamentos ficarão disponíveis quando o banco de dados for configurado.</p><p class="muted">${esc(error?.error || 'Serviço temporariamente indisponível.')}</p></div>`;
     return;
   }
   const visualCategories = [
@@ -94,7 +94,7 @@ async function home() {
     const query = `&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}&max_price=${encodeURIComponent($('#max-price').value)}&sort=${encodeURIComponent($('#sort').value)}`;
     const providers = await api('providers', null, query);
     $('#results-count').textContent = `${providers.length} profissional${providers.length === 1 ? '' : 'is'} encontrado${providers.length === 1 ? '' : 's'}`;
-    $('#list').innerHTML = providers.length ? providers.map((professional) => { const cover = imgs(professional.img)[0] || professional.logo || 'assets/conectaelas-mark.png'; return `<a class="card" href="#/p/${professional.id}">
+    $('#list').innerHTML = providers.length ? providers.map((professional) => { const cover = imgs(professional.img)[0] || professional.logo || 'assets/conectafemme-logo.png'; return `<a class="card" href="#/p/${professional.id}">
       <div class="img" ${bg(cover)}><div class="logo" ${bg(professional.logo || cover)}></div></div>
       <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc(professional.city || '')}</div>
       ${professional.min_price != null ? `<div>a partir de <span class="price">${brl(professional.min_price)}</span></div>` : '<div class="muted">Consulte os serviços</div>'}<span class="card-link btn sm">Ver perfil <span aria-hidden="true">→</span></span></div></a>`; }).join('') : '<p class="muted">Nenhum profissional encontrado. Tente ampliar o preço máximo ou alterar a categoria.</p>';
@@ -122,10 +122,10 @@ async function provider(id) {
     ? `<a class="btn out sm" href="${esc(professional.instagram_url)}" target="_blank" rel="noopener noreferrer">Instagram</a>`
     : '';
   app.innerHTML = `<div class="profile-head"><div class="lg" ${bg(professional.logo)}></div><div><h2 style="margin:0">${esc(professional.name)}</h2><span class="tag">${esc(professional.category || '')}</span> ${professional.is_demo ? '<span class="tag demo-tag">Perfil demonstrativo</span>' : ''} <span class="muted">${esc(professional.city || '')}</span><p>${esc(professional.bio || '')}</p>
-    ${professional.is_demo ? '<p class="muted">Este perfil fictício é apenas para demonstração; o contato não está ativo.</p>' : `<div class="profile-actions"><a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(professional.whatsapp, `Olá ${professional.name}! Vi seu perfil no Conecta Elas.`)}">WhatsApp</a>${instagram}</div>`}</div></div>
+    ${professional.is_demo ? '<p class="muted">Este perfil fictício é apenas para demonstração; o contato não está ativo.</p>' : `<div class="profile-actions"><a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(professional.whatsapp, `Olá ${professional.name}! Vi seu perfil no ConectaFemme.`)}">WhatsApp</a>${instagram}</div>`}</div></div>
     <h3>Serviços</h3><div class="row">${professional.services.map((service) => {
       const images = imgs(service.images);
-      return `<div class="box">${images[0] ? `<img class="main-img" id="m${service.id}" src="${esc(images[0])}" alt="Foto do serviço ${esc(service.title)}">` : '<div class="main-img service-placeholder" aria-label="Imagem ilustrativa">Conecta Ela\'s</div>'}
+      return `<div class="box">${images[0] ? `<img class="main-img" id="m${service.id}" src="${esc(images[0])}" alt="Foto do serviço ${esc(service.title)}">` : '<div class="main-img service-placeholder" aria-label="Imagem ilustrativa">ConectaFemme</div>'}
         <div class="thumbs">${images.map((image) => `<img src="${esc(image)}" alt="Foto de ${esc(service.title)}" onclick="document.getElementById('m${service.id}').src=this.src">`).join('')}</div><h4>${esc(service.title)}</h4><p class="muted">${esc(service.descr)}</p><div class="price">${brl(service.price)}</div>
         ${professional.is_demo ? '<span class="tag demo-tag">Serviço de exemplo</span>' : `<button class="btn sm" data-s="${service.id}">Escolher</button>`}</div>`;
     }).join('') || '<p class="muted">Sem serviços ainda.</p>'}</div>

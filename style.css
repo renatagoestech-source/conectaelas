@@ -21,7 +21,7 @@ input,select,textarea{padding:10px;border:1px solid var(--b);border-radius:8px;f
 @media(max-width:480px){.week-row{grid-template-columns:repeat(2,minmax(0,1fr))}.week-row .week-day{grid-column:1/-1}.price-filter{max-width:none}}
 
 
-/* Redesign Conecta Elas — revisão local para aprovação */
+/* Redesign ConectaFemme — revisão visual */
 :root {
   --accent-soft: #f6e7e2;
   --accent-pale: #fff8f6;
@@ -40,6 +40,7 @@ header {
 }
 .brand { gap: 12px; }
 .brand-mark { width: 65px; height: 52px; }
+.brand-logo { display: block; width: 142px; height: 58px; object-fit: contain; object-position: left center; }
 .brand-copy strong { font-size: 1.35rem; }
 nav { gap: clamp(14px, 2.3vw, 32px); }
 nav a, nav button { font-size: .95rem; }
@@ -115,6 +116,7 @@ input, select, textarea { min-height: 42px; border-radius: 11px; }
 @media (max-width: 640px) {
   header { padding: 9px 4%; }
   .brand-mark { width: 60px; height: 48px; }
+  .brand-logo { width: 122px; height: 52px; }
   .brand-copy strong { font-size: 1.18rem; }
   nav { gap: 9px; }
   nav a, nav button { font-size: .84rem; }

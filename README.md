@@ -1,4 +1,4 @@
-# Conecta Ela's
+# ConectaFemme
 
 Aplicação web para conectar clientes a profissionais de beleza, cadastrar serviços, horários e agendamentos.
 

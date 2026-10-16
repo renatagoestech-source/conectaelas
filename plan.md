@@ -12,7 +12,7 @@
 ## Estrutura
 
 - `index.html`: cabeçalho com marca e slogan, ícone e inicialização do tema.
-- `assets/conectaelas-mark.png`: símbolo fornecido, sem fundo e harmonizado à paleta.
+- `assets/conectafemme-logo.png`: logo ConectaFemme fornecida, com fundo removido e preparada para o cabeçalho.
 - `style.css`: variáveis de cor compartilhadas pelos temas claro e escuro.
 - `app.js`: alternância persistente, rótulos dos perfis demonstrativos e aba de remoção administrativa.
 - `supabase/functions/conectaelas-api/index.ts`: exposição da marca de demonstração, autorização e exclusão apenas de perfis de demonstração.
