@@ -57,8 +57,8 @@ function toggleTheme() {
 function nav() {
   $('#nav').innerHTML = `<a href="#/">Início</a>` + (U
     ? `<a href="#/${U.role === 'admin' ? 'admin' : 'painel'}">${U.role === 'admin' ? 'Admin' : U.role === 'provider' ? 'Meu painel' : 'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`
-    : `<a href="#/login">Entrar</a><a class="btn sm" href="#/cadastro">Cadastrar</a>`) +
-    `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema">${document.documentElement.dataset.theme === 'dark' ? 'Modo claro' : 'Modo escuro'}</button>`;
+    : `<a href="#/login">Entrar</a><a class="btn sm signup-link" href="#/cadastro">Cadastrar</a>`) +
+    `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema" title="Alternar tema"><span aria-hidden="true">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</span></button>`;
   $('#theme-toggle').onclick = toggleTheme;
 }
 
@@ -78,28 +78,38 @@ async function home() {
     app.innerHTML = `<div class="box"><h2>Estamos preparando o Conecta Ela's</h2><p class="muted">A busca e os agendamentos ficarão disponíveis quando o banco de dados for configurado.</p><p class="muted">${esc(error?.error || 'Serviço temporariamente indisponível.')}</p></div>`;
     return;
   }
-  app.innerHTML = `<div class="hero"><h1>Encontre o profissional de beleza ideal</h1>
-    <div class="bar"><input id="q" placeholder="Buscar serviço ou profissional...">
+  const visualCategories = [
+    ['Unhas', '✧'], ['Cabelos', '⌁'], ['Maquiagem', '✦'], ['Cílios', '◌'], ['Sobrancelhas', '⌒'], ['Estética', '✿']
+  ];
+  app.innerHTML = `<section class="hero search-hero"><div class="search-copy"><span class="eyebrow">DESCUBRA PROFISSIONAIS</span><h1>Sua beleza começa com a escolha certa.</h1><p>Encontre profissionais de confiança, veja seus serviços e escolha quem combina com você.</p></div>
+    <div class="bar"><label class="sr-only" for="q">Buscar serviço ou profissional</label><input id="q" placeholder="Buscar serviço ou profissional...">
       <select id="cat"><option value="">Todas as categorias</option>${categories.map((category) => `<option>${esc(category)}</option>`).join('')}</select>
       <input id="max-price" class="price-filter" type="number" min="0" step="0.01" placeholder="Preço máximo (R$)" aria-label="Preço máximo">
       <select id="sort" aria-label="Ordenar profissionais"><option value="price_asc">Menor preço primeiro</option><option value="price_desc">Maior preço primeiro</option><option value="recent">Mais recentes</option></select>
-      <button class="btn search-btn" id="go">Buscar</button></div></div>
+      <button class="btn search-btn" id="go">Buscar profissionais</button></div></section>
+    <section class="category-section" aria-labelledby="category-title"><div class="section-intro"><span class="eyebrow">ENCONTRE SEU ESTILO</span><h2 id="category-title">Escolha uma categoria</h2><p>Inspire-se e encontre alguém especial para cuidar de você.</p></div><div class="category-list">${visualCategories.map(([label, icon]) => `<button class="category-chip" type="button" data-category="${esc(label)}"><span class="category-icon" aria-hidden="true">${icon}</span><span>${esc(label)}</span></button>`).join('')}</div></section>
     <p class="muted" id="results-count" aria-live="polite"></p><div class="grid" id="list"></div>`;
 
   const load = async () => {
     const query = `&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}&max_price=${encodeURIComponent($('#max-price').value)}&sort=${encodeURIComponent($('#sort').value)}`;
     const providers = await api('providers', null, query);
     $('#results-count').textContent = `${providers.length} profissional${providers.length === 1 ? '' : 'is'} encontrado${providers.length === 1 ? '' : 's'}`;
-    $('#list').innerHTML = providers.length ? providers.map((professional) => `<a class="card" href="#/p/${professional.id}">
-      <div class="img${professional.is_demo ? ' demo-cover' : ''}" ${bg(imgs(professional.img)[0])}>${professional.is_demo ? `<span class="demo-monogram">${esc(professional.name.split(' ').filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase())}</span>` : ''}<div class="logo" ${bg(professional.logo)}></div></div>
+    $('#list').innerHTML = providers.length ? providers.map((professional) => { const cover = imgs(professional.img)[0] || professional.logo || 'assets/conectaelas-mark.png'; return `<a class="card" href="#/p/${professional.id}">
+      <div class="img" ${bg(cover)}><div class="logo" ${bg(professional.logo || cover)}></div></div>
       <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc(professional.city || '')}</div>
-      ${professional.min_price != null ? `<div>a partir de <span class="price">${brl(professional.min_price)}</span></div>` : '<div class="muted">Consulte os serviços</div>'}</div></a>`).join('') : '<p class="muted">Nenhum profissional encontrado. Tente ampliar o preço máximo ou alterar a categoria.</p>';
+      ${professional.min_price != null ? `<div>a partir de <span class="price">${brl(professional.min_price)}</span></div>` : '<div class="muted">Consulte os serviços</div>'}<span class="card-link btn sm">Ver perfil <span aria-hidden="true">→</span></span></div></a>`; }).join('') : '<p class="muted">Nenhum profissional encontrado. Tente ampliar o preço máximo ou alterar a categoria.</p>';
   };
   $('#go').onclick = load;
   $('#q').onkeydown = (event) => event.key === 'Enter' && load();
   $('#max-price').onkeydown = (event) => event.key === 'Enter' && load();
   $('#cat').onchange = load;
   $('#sort').onchange = load;
+  document.querySelectorAll('[data-category]').forEach((button) => button.onclick = () => {
+    const requested = button.dataset.category;
+    const exact = categories.find((category) => category.toLowerCase() === requested.toLowerCase());
+    if (exact) { $('#cat').value = exact; $('#q').value = ''; } else { $('#cat').value = ''; $('#q').value = requested; }
+    load();
+  });
   load();
 }
 
