@@ -14,6 +14,7 @@ const fd = (date) => date ? date.split('-').reverse().join('/') : '';
 const DAYS = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 const ratingSummary = (average, count) => count ? `<span class="rating-summary" title="${count} avaliação${count === 1 ? '' : 'ões'}">★ ${Number(average).toFixed(1)} <small>(${count})</small></span>` : '<span class="muted rating-summary">Sem avaliações</span>';
 const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 function todayInBrazil() {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const date = Object.fromEntries(parts.map((part) => [part.type, part.value]));
@@ -85,6 +86,8 @@ async function home() {
   app.innerHTML = `<section class="hero search-hero"><div class="search-copy"><span class="eyebrow">DESCUBRA PROFISSIONAIS</span><h1>Sua beleza começa com a escolha certa.</h1><p>Encontre profissionais de confiança, veja seus serviços e escolha quem combina com você.</p></div>
     <div class="bar"><label class="sr-only" for="q">Buscar serviço ou profissional</label><input id="q" placeholder="Buscar serviço ou profissional...">
       <select id="cat"><option value="">Todas as categorias</option>${categories.map((category) => `<option>${esc(category)}</option>`).join('')}</select>
+      <select id="state" aria-label="Estado"><option value="">Todos os estados</option>${BRAZIL_STATES.map((state) => `<option>${state}</option>`).join('')}</select>
+      <input id="city" placeholder="Cidade" aria-label="Cidade">
       <input id="max-price" class="price-filter" type="number" min="0" step="0.01" placeholder="Preço máximo (R$)" aria-label="Preço máximo">
       <select id="sort" aria-label="Ordenar profissionais"><option value="price_asc">Menor preço primeiro</option><option value="price_desc">Maior preço primeiro</option><option value="recent">Mais recentes</option></select>
       <button class="btn search-btn" id="go">Buscar profissionais</button></div></section>
@@ -92,18 +95,20 @@ async function home() {
     <p class="muted" id="results-count" aria-live="polite"></p><div class="grid" id="list"></div>`;
 
   const load = async () => {
-    const query = `&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}&max_price=${encodeURIComponent($('#max-price').value)}&sort=${encodeURIComponent($('#sort').value)}`;
+    const query = `&q=${encodeURIComponent($('#q').value)}&cat=${encodeURIComponent($('#cat').value)}&state=${encodeURIComponent($('#state').value)}&city=${encodeURIComponent($('#city').value)}&max_price=${encodeURIComponent($('#max-price').value)}&sort=${encodeURIComponent($('#sort').value)}`;
     const providers = await api('providers', null, query);
     $('#results-count').textContent = `${providers.length} profissional${providers.length === 1 ? '' : 'is'} encontrado${providers.length === 1 ? '' : 's'}`;
     $('#list').innerHTML = providers.length ? providers.map((professional) => { const cover = imgs(professional.img)[0] || professional.logo || 'assets/conectafemme-logo.png'; return `<a class="card" href="#/p/${professional.id}">
       <div class="img" ${bg(cover)}><div class="logo" ${bg(professional.logo || cover)}></div></div>
-      <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}${professional.is_founder ? '<span class="founder-badge compact">✦ Fundador</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc(professional.city || '')}</div>${ratingSummary(professional.rating_avg, professional.review_count)}
+      <div class="info"><b>${esc(professional.name)}</b> ${professional.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}${professional.is_founder ? '<span class="founder-badge compact">✦ Fundador</span>' : ''}<br><span class="tag">${esc(professional.category || '')}</span><div class="muted">${esc([professional.city, professional.state].filter(Boolean).join(' · '))}</div>${ratingSummary(professional.rating_avg, professional.review_count)}
       ${professional.min_price != null ? `<div>a partir de <span class="price">${brl(professional.min_price)}</span></div>` : '<div class="muted">Consulte os serviços</div>'}<span class="card-link btn sm">Ver perfil <span aria-hidden="true">→</span></span></div></a>`; }).join('') : '<p class="muted">Nenhum profissional encontrado. Tente ampliar o preço máximo ou alterar a categoria.</p>';
   };
   $('#go').onclick = load;
   $('#q').onkeydown = (event) => event.key === 'Enter' && load();
   $('#max-price').onkeydown = (event) => event.key === 'Enter' && load();
   $('#cat').onchange = load;
+  $('#state').onchange = load;
+  $('#city').onkeydown = (event) => event.key === 'Enter' && load();
   $('#sort').onchange = load;
   document.querySelectorAll('[data-category]').forEach((button) => button.onclick = () => {
     const requested = button.dataset.category;
@@ -122,7 +127,7 @@ async function provider(id) {
   const instagram = professional.instagram_url
     ? `<a class="btn out sm" href="${esc(professional.instagram_url)}" target="_blank" rel="noopener noreferrer">Instagram</a>`
     : '';
-  app.innerHTML = `<div class="profile-head"><div class="lg" ${bg(professional.logo)}></div><div><h2 style="margin:0">${esc(professional.name)}</h2><span class="tag">${esc(professional.category || '')}</span> ${professional.is_demo ? '<span class="tag demo-tag">Perfil demonstrativo</span>' : ''} ${professional.is_founder ? '<span class="founder-badge compact">✦ Profissional Fundador</span>' : ''} <span class="muted">${esc(professional.city || '')}</span><div class="profile-rating">${ratingSummary(professional.rating_avg, professional.review_count)}</div><p>${esc(professional.bio || '')}</p>
+  app.innerHTML = `<div class="profile-head"><div class="lg" ${bg(professional.logo)}></div><div><h2 style="margin:0">${esc(professional.name)}</h2><span class="tag">${esc(professional.category || '')}</span> ${professional.is_demo ? '<span class="tag demo-tag">Perfil demonstrativo</span>' : ''} ${professional.is_founder ? '<span class="founder-badge compact">✦ Profissional Fundador</span>' : ''} <span class="muted">${esc([professional.city, professional.state].filter(Boolean).join(' · '))}</span><div class="profile-rating">${ratingSummary(professional.rating_avg, professional.review_count)}</div><p>${esc(professional.bio || '')}</p>
     ${professional.is_demo ? '<p class="muted">Este perfil fictício é apenas para demonstração; o contato não está ativo.</p>' : `<div class="profile-actions"><a class="btn wa sm" target="_blank" rel="noopener noreferrer" href="${wa(professional.whatsapp, `Olá ${professional.name}! Vi seu perfil no ConectaFemme.`)}">WhatsApp</a>${instagram}</div>`}</div></div>
     <h3>Serviços</h3><div class="row">${professional.services.map((service) => {
       const images = imgs(service.images);
@@ -159,7 +164,7 @@ async function provider(id) {
 
 function authForm(register) {
   app.innerHTML = `<div class="box auth"><h2>${register ? 'Criar conta' : 'Entrar'}</h2>
-    ${register ? `<label>Sou</label><select id="role"><option value="client">Cliente</option><option value="provider">Profissional / Estabelecimento</option></select><label>Nome</label><input id="name"><label>WhatsApp (com DDD)</label><input id="wa"><div id="pf" hidden><label>Especialidade</label><select id="cat"></select><label>Cidade</label><input id="city"></div>` : ''}
+    ${register ? `<label>Sou</label><select id="role"><option value="client">Cliente</option><option value="provider">Profissional / Estabelecimento</option></select><label>Nome</label><input id="name"><label>WhatsApp (com DDD)</label><input id="wa"><div id="pf" hidden><label>Especialidade</label><select id="cat"></select><div class="provider-location-grid"><label>Estado<select id="state"><option value="">Selecione</option>${BRAZIL_STATES.map((state) => `<option>${state}</option>`).join('')}</select></label><label>Cidade<input id="city" autocomplete="address-level2"></label></div></div>` : ''}
     <label>E-mail</label><input id="email" type="email"><label>Senha</label><input id="pw" type="password"><br><br><button class="btn" id="ok" style="width:100%">${register ? 'Cadastrar' : 'Entrar'}</button>
     <p class="muted">${register ? 'Já tem conta? <a href="#/login">Entrar</a>' : 'Novo aqui? <a href="#/cadastro">Cadastre-se</a>'}</p></div>`;
   if (register) {
@@ -168,7 +173,7 @@ function authForm(register) {
   }
   $('#ok').onclick = async () => {
     const body = { email: $('#email').value, password: $('#pw').value };
-    if (register) Object.assign(body, { role: $('#role').value, name: $('#name').value, whatsapp: $('#wa').value, category: $('#cat').value, city: $('#city').value });
+    if (register) Object.assign(body, { role: $('#role').value, name: $('#name').value, whatsapp: $('#wa').value, category: $('#cat').value, state: $('#state').value, city: $('#city').value });
     const result = await api(register ? 'register' : 'login', body);
     T = result.token; U = result.user;
     localStorage.t = T; localStorage.u = JSON.stringify(U);
@@ -270,7 +275,7 @@ async function painel(tab = 'ag') {
   const tabs = {
     ag: `${buildManualBookingForm(services, slots)}<div class="box">${bookings.length ? bookTable(bookings) : '<p class="muted">Sem agendamentos ainda.</p>'}</div>`,
     perfil: `<div class="box"><h3>Seu perfil público</h3><p class="muted">Envie este link às suas clientes para elas verem seus serviços e agendarem.</p><div class="share-link-row"><input id="public-link" readonly value="${esc(profileLink)}"><button class="btn" id="copy-link" type="button">Copiar link público</button></div>
-      <label>Nome do estabelecimento</label><input id="n" value="${esc(me.name)}"><label>WhatsApp</label><input id="w" value="${esc(me.whatsapp)}"><label>Especialidade</label><select id="c">${categories.map((category) => `<option ${category === me.category ? 'selected' : ''}>${esc(category)}</option>`).join('')}</select><label>Cidade</label><input id="ci" value="${esc(me.city)}">
+      <label>Nome do estabelecimento</label><input id="n" value="${esc(me.name)}"><label>WhatsApp</label><input id="w" value="${esc(me.whatsapp)}"><label>Especialidade</label><select id="c">${categories.map((category) => `<option ${category === me.category ? 'selected' : ''}>${esc(category)}</option>`).join('')}</select><div class="provider-location-grid"><label>Estado<select id="profile-state"><option value="">Selecione</option>${BRAZIL_STATES.map((state) => `<option ${state === me.state ? 'selected' : ''}>${state}</option>`).join('')}</select></label><label>Cidade<input id="ci" value="${esc(me.city)}" autocomplete="address-level2"></label></div>
       <label>Instagram</label><input id="instagram" type="url" placeholder="https://www.instagram.com/seuperfil" value="${esc(me.instagram_url || '')}"><label>Foto ou logo do perfil</label><input id="logo-file" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">JPG, PNG ou WebP; a imagem será carregada diretamente do seu dispositivo.</small>${me.logo ? `<div class="upload-preview" ${bg(me.logo)} aria-label="Logo atual"></div>` : ''}
       <label>Sobre você</label><textarea id="b" rows="4">${esc(me.bio)}</textarea><br><br><button class="btn" id="sp">Salvar perfil</button></div>`,
     serv: `<div class="box"><h3>Novo serviço</h3><label>Título</label><input id="t" maxlength="160"><label>Descrição</label><textarea id="d" rows="3"></textarea><label>Valor (R$)</label><input id="pr" type="number" min="0" step="0.01" required><label>Fotos do serviço</label><input id="service-files" type="file" accept="image/jpeg,image/png,image/webp" multiple><small class="muted">Escolha até 4 imagens do dispositivo; imagens grandes são otimizadas antes do envio.</small><br><br><button class="btn" id="ss">Publicar serviço</button></div>${services.map((service) => `<div class="box"><b>${esc(service.title)}</b> — ${brl(service.price)} <button class="btn red sm" onclick="del('service_del',${service.id})">Excluir</button></div>`).join('')}`,
@@ -286,7 +291,7 @@ async function painel(tab = 'ag') {
     const selectedFile = $('#logo-file').files[0];
     let logo = me.logo || '';
     if (selectedFile) logo = (await uploadSelected(selectedFile, 'profile')).url;
-    await api('profile_save', { name: $('#n').value, whatsapp: $('#w').value, category: $('#c').value, city: $('#ci').value, logo, bio: $('#b').value, instagram_url: $('#instagram').value });
+    await api('profile_save', { name: $('#n').value, whatsapp: $('#w').value, category: $('#c').value, state: $('#profile-state').value, city: $('#ci').value, logo, bio: $('#b').value, instagram_url: $('#instagram').value });
     alert('Perfil atualizado!');
     painel('perfil');
   });
@@ -334,7 +339,7 @@ async function admin(tab = 'p') {
   const [users, categories, bookings] = await Promise.all([api('admin_users'), api('cats'), api('admin_bookings')]);
   const professionals = users.filter((user) => user.role === 'provider');
   const clients = users.filter((user) => user.role === 'client');
-  const userTable = (people, title, empty) => `<div class="box admin-user-group"><h3>${title}</h3>${people.length ? `<table><tr><th>Nome</th><th>Especialidade</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${people.map((user) => `<tr><td>${esc(user.name)} ${user.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}</td><td>${user.role === 'provider' ? esc(user.category || 'Sem categoria') : '—'}</td><td>${esc(user.email)}</td><td>${esc(user.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${user.id})">Excluir</button></td></tr>`).join('')}</table>` : `<p class="muted">${empty}</p>`}</div>`;
+  const userTable = (people, title, empty) => `<div class="box admin-user-group"><div class="admin-group-heading"><h3>${title}</h3><span class="admin-count">${people.length} cadastro${people.length === 1 ? '' : 's'}</span></div>${people.length ? `<table><tr><th>Nome</th><th>Especialidade</th><th>Localização</th><th>E-mail</th><th>WhatsApp</th><th></th></tr>${people.map((user) => `<tr><td>${esc(user.name)} ${user.is_demo ? '<span class="tag demo-tag">DEMO</span>' : ''}</td><td>${user.role === 'provider' ? esc(user.category || 'Sem categoria') : '—'}</td><td>${esc([user.city, user.state].filter(Boolean).join(' · ') || '—')}</td><td>${esc(user.email)}</td><td>${esc(user.whatsapp)}</td><td><button class="btn red sm" onclick="adel(${user.id})">Excluir</button></td></tr>`).join('')}</table>` : `<p class="muted">${empty}</p>`}</div>`;
   const content = {
     p: userTable(professionals, 'Profissionais', 'Nenhum profissional cadastrado. Os perfis DEMO ficam nesta aba para exclusão posterior.'),
     c: userTable(clients, 'Clientes', 'Nenhum cliente cadastrado.'),
@@ -342,7 +347,7 @@ async function admin(tab = 'p') {
     b: `<div class="box"><table><tr><th>Data</th><th>Serviço</th><th>Cliente</th><th>Profissional</th><th>Status</th></tr>${bookings.map((booking) => `<tr><td>${fd(booking.day)} ${esc(booking.hour)}</td><td>${esc(booking.title)}</td><td>${esc(booking.client || 'Agendamento manual')}</td><td>${esc(booking.provider)}</td><td><span class="status-pill status-${esc(booking.status)}">${statusLabel(booking.status)}</span></td></tr>`).join('')}</table></div>`,
     s: `<div class="box security-box"><h3>Alterar senha administrativa</h3><p class="muted">Use esta área para trocar a senha do acesso administrativo. A senha atual é necessária e a nova senha deve ter pelo menos 8 caracteres.</p><label>Senha atual</label><input id="admin-current-password" type="password" autocomplete="current-password"><label>Nova senha</label><input id="admin-new-password" type="password" minlength="8" autocomplete="new-password"><label>Confirmar nova senha</label><input id="admin-confirm-password" type="password" minlength="8" autocomplete="new-password"><br><br><button class="btn" id="change-admin-password" type="button">Salvar nova senha</button></div>`,
   };
-  app.innerHTML = `<section class="admin-heading"><div><span class="eyebrow">PAINEL DE CONTROLE</span><h2>Administração</h2><p class="muted">Acompanhe a comunidade e a operação do ConectaFemme.</p></div><div class="admin-stat"><strong>${professionals.length + clients.length}</strong><span>usuários ativos</span></div></section><div class="tabs admin-tabs">${[['p','Profissionais'],['c','Clientes'],['k','Categorias'],['b','Agendamentos'],['s','Segurança']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
+  app.innerHTML = `<section class="admin-heading"><div class="admin-stats"><div class="admin-stat admin-stat-total"><strong>${professionals.length + clients.length}</strong><span>usuários ativos</span></div><div class="admin-stat admin-stat-provider"><strong>${professionals.length}</strong><span>profissionais</span></div><div class="admin-stat admin-stat-client"><strong>${clients.length}</strong><span>clientes</span></div></div><div class="admin-heading-copy"><span class="eyebrow">PAINEL DE CONTROLE</span><h2>Administração</h2><p class="muted">Acompanhe a comunidade e a operação do ConectaFemme.</p></div></section><div class="tabs admin-tabs">${[['p','Profissionais'],['c','Clientes'],['k','Categorias'],['b','Agendamentos'],['s','Segurança']].map(([key,label]) => `<button class="${key === tab ? 'on' : ''}" onclick="admin('${key}')">${label}</button>`).join('')}</div>${content[tab]}`;
   window._at = tab;
   if ($('#ac')) $('#ac').onclick = async () => { await api('admin_cat_add', { name: $('#nc').value }); admin('k'); };
   if ($('#change-admin-password')) $('#change-admin-password').onclick = async () => {

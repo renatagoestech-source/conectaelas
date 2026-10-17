@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.providers (
   category varchar(80),
   bio text NOT NULL DEFAULT '',
   logo varchar(500) NOT NULL DEFAULT '',
+  state varchar(2) NOT NULL DEFAULT '',
   city varchar(80) NOT NULL DEFAULT '',
   instagram_url varchar(255) NOT NULL DEFAULT '',
   weekly_schedule jsonb NOT NULL DEFAULT '{}'::jsonb,

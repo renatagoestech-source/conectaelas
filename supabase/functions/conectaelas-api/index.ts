@@ -217,6 +217,7 @@ async function handle(req: Request) {
         await post("providers", {
           user_id: u.id,
           category: bodyString(input, "category"),
+          state: bodyString(input, "state").toUpperCase(),
           city: bodyString(input, "city"),
           is_founder: founderCandidates.length < FOUNDER_LIMIT,
         });
@@ -235,12 +236,12 @@ async function handle(req: Request) {
       return { token: await makeToken(user), user };
     }
     case "providers": {
-      const category = url.searchParams.get("cat") ?? "", query = (url.searchParams.get("q") ?? "").toLocaleLowerCase();
+      const category = url.searchParams.get("cat") ?? "", state = (url.searchParams.get("state") ?? "").toUpperCase(), city = (url.searchParams.get("city") ?? "").toLocaleLowerCase(), query = (url.searchParams.get("q") ?? "").toLocaleLowerCase();
       const maxPriceText = url.searchParams.get("max_price") ?? "", maxPrice = maxPriceText === "" ? null : Number(maxPriceText);
       const sort = url.searchParams.get("sort") ?? "price_asc";
       const [users, profiles, services, reviews] = await Promise.all([
         get("users", { select: "id,name,is_demo", role: "eq.provider", order: "id.desc", limit: "200" }),
-        get("providers", { select: "user_id,category,logo,city,bio,is_founder" }),
+        get("providers", { select: "user_id,category,logo,state,city,bio,is_founder" }),
         get("services", { select: "id,provider_id,title,price,images", order: "id.asc" }),
         get("reviews", { select: "provider_id,rating" }),
       ]);
@@ -248,8 +249,8 @@ async function handle(req: Request) {
         const p = profiles.find((x: any) => Number(x.user_id) === Number(u.id));
         const own = services.filter((x: any) => Number(x.provider_id) === Number(u.id));
         const ownReviews = reviews.filter((x: any) => Number(x.provider_id) === Number(u.id));
-        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), is_founder: Boolean(p?.is_founder), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images, ...ratingSummary(ownReviews) };
-      }).filter((p: any) => p.category && (!category || p.category === category) && (!query || [p.name,p.category,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
+        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), is_founder: Boolean(p?.is_founder), category: p?.category, logo: p?.logo, state: p?.state, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images, ...ratingSummary(ownReviews) };
+      }).filter((p: any) => p.category && (!category || p.category === category) && (!state || p.state === state) && (!city || String(p.city ?? "").toLocaleLowerCase().includes(city)) && (!query || [p.name,p.category,p.state,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
         .filter((p: any) => maxPrice === null || (Number.isFinite(maxPrice) && p.min_price !== null && p.min_price <= maxPrice))
         .sort((a: any, b: any) => {
           if (sort === "price_desc") return (b.min_price ?? -1) - (a.min_price ?? -1) || Number(b.id) - Number(a.id);
@@ -262,7 +263,7 @@ async function handle(req: Request) {
       const id = Number(url.searchParams.get("id") ?? 0);
       const [u, p, reviews] = await Promise.all([
         get("users", { select: "id,name,whatsapp,is_demo", id: idFilter(id), role: "eq.provider", limit: "1" }),
-        get("providers", { select: "category,bio,logo,city,instagram_url,is_founder", user_id: idFilter(id), limit: "1" }),
+        get("providers", { select: "category,bio,logo,state,city,instagram_url,is_founder", user_id: idFilter(id), limit: "1" }),
         get("reviews", { select: "id,rating,comment,created,client_id", provider_id: idFilter(id), order: "created.desc", limit: "50" }),
       ]);
       if (!u.length || !p.length) fail(404, "Não encontrado");
@@ -279,7 +280,7 @@ async function handle(req: Request) {
       const me = await auth(req, ["provider"]);
       const [u,p] = await Promise.all([
         get("users", { select: "name,whatsapp", id: idFilter(me.id), limit: "1" }),
-        get("providers", { select: "category,bio,logo,city,instagram_url,weekly_schedule", user_id: idFilter(me.id), limit: "1" }),
+        get("providers", { select: "category,bio,logo,state,city,instagram_url,weekly_schedule", user_id: idFilter(me.id), limit: "1" }),
       ]);
       return { ...(u[0] ?? {}), ...(p[0] ?? {}) };
     }
@@ -299,7 +300,7 @@ async function handle(req: Request) {
         }
       }
       await patch("users", { id: idFilter(me.id) }, { name: bodyString(input,"name"), whatsapp: bodyString(input,"whatsapp") });
-      await patch("providers", { user_id: idFilter(me.id) }, { category: bodyString(input,"category"), bio: bodyString(input,"bio"), logo: bodyString(input,"logo"), city: bodyString(input,"city"), instagram_url: instagramUrl });
+      await patch("providers", { user_id: idFilter(me.id) }, { category: bodyString(input,"category"), bio: bodyString(input,"bio"), logo: bodyString(input,"logo"), state: bodyString(input,"state").toUpperCase(), city: bodyString(input,"city"), instagram_url: instagramUrl });
       return { ok: 1 };
     }
     case "image_upload": {
@@ -460,9 +461,9 @@ async function handle(req: Request) {
       await auth(req,["admin"]);
       const [users, providers] = await Promise.all([
         get("users", { select: "id,role,name,email,whatsapp,created,is_demo", role: "neq.admin", order: "id.desc" }),
-        get("providers", { select: "user_id,category" }),
+        get("providers", { select: "user_id,category,state,city" }),
       ]);
-      return users.map((u: any) => ({ ...u, category: providers.find((p: any) => Number(p.user_id) === Number(u.id))?.category ?? null }));
+      return users.map((u: any) => ({ ...u, ...(providers.find((p: any) => Number(p.user_id) === Number(u.id)) ?? {}) }));
     }
     case "admin_password_change": {
       const me = await auth(req, ["admin"]);
