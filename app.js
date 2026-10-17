@@ -38,6 +38,75 @@ async function installPWA() {
   await installPrompt.userChoice;
 }
 
+function pushPublicKeyToBytes(value) {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+  const raw = atob(padded);
+  return Uint8Array.from(raw, (char) => char.charCodeAt(0));
+}
+
+function refreshPushButton() {
+  const button = $('#push-toggle');
+  if (!button || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  navigator.serviceWorker.ready
+    .then((registration) => registration.pushManager.getSubscription())
+    .then((subscription) => {
+      if (button.isConnected) button.textContent = subscription ? 'Desativar notificações' : 'Ativar notificações';
+    })
+    .catch(() => {});
+}
+
+async function togglePushNotifications() {
+  if (!U || !['client', 'provider'].includes(U.role)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    alert('Este navegador não oferece suporte a notificações push.');
+    return;
+  }
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isInstalled = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  if (isIOS && !isInstalled) {
+    alert('No iPhone, primeiro adicione o ConectaFemme à Tela de Início pelo Safari. Depois, abra o app instalado e ative as notificações.');
+    return;
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  const current = await registration.pushManager.getSubscription();
+  if (current) {
+    await pushApi('unsubscribe', { endpoint: current.endpoint }, true);
+    await current.unsubscribe();
+    alert('Notificações desativadas neste dispositivo.');
+    refreshPushButton();
+    return;
+  }
+
+  if (Notification.permission === 'denied') {
+    alert('As notificações estão bloqueadas nas configurações do navegador. Libere a permissão do ConectaFemme e tente novamente.');
+    return;
+  }
+  const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+  if (permission !== 'granted') {
+    alert('Sem permissão, o navegador não pode mostrar notificações.');
+    return;
+  }
+
+  const vapid = await pushApi('public_key', null, true);
+  if (!vapid.publicKey) throw new Error('Não foi possível preparar as notificações.');
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: pushPublicKeyToBytes(vapid.publicKey),
+  });
+  try {
+    await pushApi('subscribe', { subscription: subscription.toJSON() }, true);
+  } catch (error) {
+    await subscription.unsubscribe();
+    throw error;
+  }
+  alert('Notificações ativadas. Você receberá avisos sobre pedidos, confirmações e cancelamentos de agendamentos.');
+  refreshPushButton();
+}
+
 let U = JSON.parse(localStorage.u || 'null');
 let T = localStorage.t || '';
 
@@ -78,6 +147,21 @@ async function api(action, body, query = '', quiet = false) {
   return data;
 }
 
+async function pushApi(action, body = null, quiet = true) {
+  const response = await fetch(`${window.SUPABASE_URL}/functions/v1/conectaelas-push?a=${action}`, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', 'X-Token': T, apikey: window.SUPABASE_PUBLISHABLE_KEY },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => ({ error: 'Resposta inválida' }));
+  if (!response.ok) {
+    if (response.status === 401 && T) logout(true);
+    if (!quiet) alert(data.error || 'Não foi possível processar a notificação.');
+    throw data;
+  }
+  return data;
+}
+
 function logout(silent = false) {
   localStorage.removeItem('u');
   localStorage.removeItem('t');
@@ -96,11 +180,18 @@ function toggleTheme() {
 
 function nav() {
   $('#nav').innerHTML = `<a href="#/">Início</a>` + (U
-    ? `<a href="#/${U.role === 'admin' ? 'admin' : 'painel'}">${U.role === 'admin' ? 'Admin' : U.role === 'provider' ? 'Meu painel' : 'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`
+    ? `<a href="#/${U.role === 'admin' ? 'admin' : 'painel'}">${U.role === 'admin' ? 'Admin' : U.role === 'provider' ? 'Meu painel' : 'Meus agendamentos'}</a>${['client', 'provider'].includes(U.role) ? '<button class="btn sm push-toggle" id="push-toggle" type="button">Ativar notificações</button>' : ''}<button onclick="logout()">Sair</button>`
     : `<a href="#/login">Entrar</a><a class="btn sm signup-link" href="#/cadastro">Cadastrar</a>`) +
     `<button class="btn sm install-app" id="install-app" type="button">Instalar app</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema" title="Alternar tema"><span aria-hidden="true">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</span></button>`;
   $('#theme-toggle').onclick = toggleTheme;
   $('#install-app').onclick = installPWA;
+  if (U && ['client', 'provider'].includes(U.role)) {
+    $('#push-toggle').onclick = () => togglePushNotifications().catch((error) => {
+      console.error('Falha ao configurar notificações:', error);
+      alert(error?.error || 'Não foi possível configurar as notificações. Tente novamente.');
+    });
+    refreshPushButton();
+  }
 }
 
 function route() {
@@ -195,6 +286,7 @@ async function provider(id) {
       if (!U || U.role !== 'client') { alert('Entre como cliente para agendar.'); location.hash = '#/login'; return; }
       if (!selectedService || !selectedSlot) { alert('Escolha serviço, dia e horário.'); return; }
       await api('book', { slot_id: selectedSlot, service_id: selectedService });
+      await pushApi('notify_booking', { slot_id: selectedSlot, service_id: selectedService }, true).catch((error) => console.warn('Não foi possível enviar o aviso de agendamento:', error));
       alert('Agendado! Combine os detalhes pelo WhatsApp.');
       location.hash = '#/painel';
     };
@@ -234,7 +326,12 @@ window.rateBooking = async (id) => {
   alert('Avaliação publicada. Obrigado por compartilhar sua experiência!');
   painel();
 };
-window.st = async (id, status) => { await api('booking_status', { id, status }); painel(); };
+window.st = async (id, status) => {
+  await api('booking_status', { id, status });
+  if (['confirmado', 'cancelado'].includes(status))
+    await pushApi('notify_status', { id, status }, true).catch((error) => console.warn('Não foi possível enviar o aviso de alteração:', error));
+  painel();
+};
 
 function weeklyScheduleEditor(schedule = {}) {
   return DAYS.map((day, index) => {
