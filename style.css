@@ -142,3 +142,5 @@ input, select, textarea { min-height: 42px; border-radius: 11px; }
 
 /* Rodapé com contato e redes sociais */
 .site-footer p{margin:0 0 8px}.footer-contact-links{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:8px 20px}.footer-contact-links a{color:var(--p);text-decoration:none}.footer-contact-links a:hover{text-decoration:underline}.footer-contact-links .footer-instagram{display:inline-flex;align-items:center;gap:6px;font-weight:700}.footer-contact-links .footer-about-link{margin-left:0}
+
+nav .install-app{white-space:nowrap}

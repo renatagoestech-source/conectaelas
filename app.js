@@ -8,6 +8,36 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+});
+
+async function installPWA() {
+  if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true) {
+    alert('O ConectaFemme já está instalado neste dispositivo.');
+    return;
+  }
+
+  if (!deferredInstallPrompt) {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    alert(isIOS
+      ? 'No Safari, toque em Compartilhar e escolha “Adicionar à Tela de Início”.'
+      : 'Abra o menu do navegador e escolha “Instalar app” ou “Adicionar à tela inicial”.');
+    return;
+  }
+
+  const installPrompt = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  await installPrompt.prompt();
+  await installPrompt.userChoice;
+}
+
 let U = JSON.parse(localStorage.u || 'null');
 let T = localStorage.t || '';
 
@@ -68,8 +98,9 @@ function nav() {
   $('#nav').innerHTML = `<a href="#/">Início</a>` + (U
     ? `<a href="#/${U.role === 'admin' ? 'admin' : 'painel'}">${U.role === 'admin' ? 'Admin' : U.role === 'provider' ? 'Meu painel' : 'Meus agendamentos'}</a><button onclick="logout()">Sair</button>`
     : `<a href="#/login">Entrar</a><a class="btn sm signup-link" href="#/cadastro">Cadastrar</a>`) +
-    `<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema" title="Alternar tema"><span aria-hidden="true">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</span></button>`;
+    `<button class="btn sm install-app" id="install-app" type="button">Instalar app</button><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Alternar tema" title="Alternar tema"><span aria-hidden="true">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</span></button>`;
   $('#theme-toggle').onclick = toggleTheme;
+  $('#install-app').onclick = installPWA;
 }
 
 function route() {
