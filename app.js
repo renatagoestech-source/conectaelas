@@ -1,5 +1,13 @@
 const $ = (selector) => document.querySelector(selector);
 const app = $('#app');
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .catch((error) => console.error('Falha ao registrar o service worker:', error));
+  });
+}
+
 let U = JSON.parse(localStorage.u || 'null');
 let T = localStorage.t || '';
 
