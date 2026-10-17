@@ -138,3 +138,7 @@ input, select, textarea { min-height: 42px; border-radius: 11px; }
   .category-list { grid-template-columns: repeat(2, 1fr); }
 }
 .search-hero .bar input::placeholder{color:#6c4051;opacity:1;font-weight:600}.search-hero .bar #q{color:var(--t)}.provider-location-grid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px}.provider-location-grid label{margin-bottom:0}.admin-group-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.admin-group-heading h3{margin:0}.admin-count{padding:5px 9px;border-radius:999px;background:var(--p2);color:var(--p);font-size:.74rem;font-weight:750}:root[data-theme="dark"] .search-hero .bar input::placeholder{color:#e1b7c4}:root[data-theme="dark"] .admin-count{background:#39242e;color:#f0b5c3}@media(max-width:640px){.provider-location-grid{grid-template-columns:1fr}.admin-group-heading{align-items:flex-start;flex-direction:column}.search-hero .bar #city{grid-column:1/-1}}
+
+
+/* Rodapé com contato e redes sociais */
+.site-footer p{margin:0 0 8px}.footer-contact-links{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:8px 20px}.footer-contact-links a{color:var(--p);text-decoration:none}.footer-contact-links a:hover{text-decoration:underline}.footer-contact-links .footer-instagram{display:inline-flex;align-items:center;gap:6px;font-weight:700}.footer-contact-links .footer-about-link{margin-left:0}
