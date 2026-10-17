@@ -6,6 +6,9 @@ const SERVICE_KEY = secrets.default ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 const publishables = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") ?? "{}");
 const PUBLIC_KEY = publishables.default ?? Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const encoder = new TextEncoder();
+const FOUNDER_LIMIT = 20;
+// A contagem começa com esta versão da campanha; perfis antigos não ocupam vagas.
+const FOUNDER_CAMPAIGN_STARTED_AT = "2026-10-17T17:15:00.000Z";
 
 class ApiError extends Error {
   status: number;
@@ -202,7 +205,22 @@ async function handle(req: Request) {
       const salt = crypto.getRandomValues(new Uint8Array(16));
       const pass = await hashPassword(password, toHex(salt));
       const u = first(await post("users", { role, name, email, pass, whatsapp }));
-      if (role === "provider") await post("providers", { user_id: u.id, category: bodyString(input, "category"), city: bodyString(input, "city") });
+      if (role === "provider") {
+        const founderCandidates = await get("users", {
+          select: "id",
+          role: "eq.provider",
+          is_demo: "eq.false",
+          created: `gte.${FOUNDER_CAMPAIGN_STARTED_AT}`,
+          order: "created.asc",
+          limit: String(FOUNDER_LIMIT),
+        });
+        await post("providers", {
+          user_id: u.id,
+          category: bodyString(input, "category"),
+          city: bodyString(input, "city"),
+          is_founder: founderCandidates.length < FOUNDER_LIMIT,
+        });
+      }
       const user = { id: u.id, role: u.role, name: u.name };
       return { token: await makeToken(user), user };
     }
@@ -222,7 +240,7 @@ async function handle(req: Request) {
       const sort = url.searchParams.get("sort") ?? "price_asc";
       const [users, profiles, services, reviews] = await Promise.all([
         get("users", { select: "id,name,is_demo", role: "eq.provider", order: "id.desc", limit: "200" }),
-        get("providers", { select: "user_id,category,logo,city,bio" }),
+        get("providers", { select: "user_id,category,logo,city,bio,is_founder" }),
         get("services", { select: "id,provider_id,title,price,images", order: "id.asc" }),
         get("reviews", { select: "provider_id,rating" }),
       ]);
@@ -230,7 +248,7 @@ async function handle(req: Request) {
         const p = profiles.find((x: any) => Number(x.user_id) === Number(u.id));
         const own = services.filter((x: any) => Number(x.provider_id) === Number(u.id));
         const ownReviews = reviews.filter((x: any) => Number(x.provider_id) === Number(u.id));
-        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images, ...ratingSummary(ownReviews) };
+        return { id: u.id, name: u.name, is_demo: Boolean(u.is_demo), is_founder: Boolean(p?.is_founder), category: p?.category, logo: p?.logo, city: p?.city, min_price: own.length ? Math.min(...own.map((x: any) => Number(x.price))) : null, img: own[0]?.images, ...ratingSummary(ownReviews) };
       }).filter((p: any) => p.category && (!category || p.category === category) && (!query || [p.name,p.category,p.city].some(v => String(v ?? "").toLocaleLowerCase().includes(query)) || services.some((s: any) => Number(s.provider_id) === Number(p.id) && String(s.title).toLocaleLowerCase().includes(query))))
         .filter((p: any) => maxPrice === null || (Number.isFinite(maxPrice) && p.min_price !== null && p.min_price <= maxPrice))
         .sort((a: any, b: any) => {
@@ -244,7 +262,7 @@ async function handle(req: Request) {
       const id = Number(url.searchParams.get("id") ?? 0);
       const [u, p, reviews] = await Promise.all([
         get("users", { select: "id,name,whatsapp,is_demo", id: idFilter(id), role: "eq.provider", limit: "1" }),
-        get("providers", { select: "category,bio,logo,city,instagram_url", user_id: idFilter(id), limit: "1" }),
+        get("providers", { select: "category,bio,logo,city,instagram_url,is_founder", user_id: idFilter(id), limit: "1" }),
         get("reviews", { select: "id,rating,comment,created,client_id", provider_id: idFilter(id), order: "created.desc", limit: "50" }),
       ]);
       if (!u.length || !p.length) fail(404, "Não encontrado");
